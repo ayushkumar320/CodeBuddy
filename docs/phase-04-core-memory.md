@@ -22,6 +22,7 @@ Read before coding:
 - idempotent `remember`
 - `rememberBatch`
 - async embedding worker
+- worker lifecycle controls for start, stop, drain, retry, and graceful shutdown
 - `share`
 - `forget`
 - DB-backed model-call persistence hook
@@ -60,6 +61,7 @@ Remember behavior:
 - In one transaction, insert the memory row and create embedding row as `pending`.
 - Return existing ID with `deduplicated: true` on duplicate.
 - Start or schedule the in-process embedding worker after commit.
+- Add worker lifecycle controls for start, stop, drain, retry, and graceful shutdown.
 
 Share behavior:
 - Default mode is `reference`.
@@ -77,6 +79,7 @@ Testing:
 - rememberBatch dedupe
 - embedding row starts pending
 - async worker status ready/failed with mocked provider
+- worker drain and graceful shutdown behavior
 - share reference vs snapshot
 - forget tombstone/cascade behavior
 

@@ -48,6 +48,7 @@ Required:
 - `p-timeout`
 - `pino`
 - `pino-pretty`
+- `langsmith`
 - `commander`
 - `@clack/prompts`
 - `picocolors`
@@ -158,6 +159,7 @@ Vector index:
 - Insert the memory row and create an embedding row with `status=pending` in one transaction.
 - Generate embeddings outside the transaction via an in-process async worker.
 - Retried writes with the same key or content return the existing ID and `deduplicated: true`.
+- The in-process worker must support start, stop, drain, retry, and graceful shutdown hooks.
 
 Clarification:
 
@@ -247,6 +249,7 @@ Rules:
 - `doctor` checks models, gated model status, recent usage, daily budget estimate, DB connectivity, `pgvector`, vector counts, index health, and config permissions.
 - `init` writes `.codebuddy/config.json` with `0600` permissions if a file is needed.
 - Prefer `HF_TOKEN` over config-file tokens.
+- `serve` must handle graceful shutdown and drain in-process embedding work where practical.
 
 ## MCP Rules
 
