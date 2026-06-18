@@ -1,0 +1,78 @@
+{
+  "name": "codebuddy",
+  "version": "0.0.0",
+  "description": "MCP memory server for multi-agent systems, powered by Postgres, pgvector, and Hugging Face.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Prashant Raj",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ayushkumar320/CodeBuddy.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "codebuddy": "./dist/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./langgraph": {
+      "types": "./dist/langgraph/index.d.ts",
+      "import": "./dist/langgraph/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "ARCHITECTURE.md",
+    "MODELS.md",
+    "TROUBLESHOOTING.md",
+    "WORKFLOW.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/cli/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "@huggingface/inference": "^3.15.1",
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "commander": "^14.0.0",
+    "drizzle-orm": "^0.44.5",
+    "js-tiktoken": "^1.0.21",
+    "langsmith": "^0.3.66",
+    "ora": "^8.2.0",
+    "p-queue": "^8.1.0",
+    "p-retry": "^6.2.1",
+    "p-timeout": "^6.1.4",
+    "picocolors": "^1.1.1",
+    "pino": "^9.9.0",
+    "pino-pretty": "^13.1.1",
+    "postgres": "^3.4.7",
+    "zod": "^3.25.76"
+  },
+  "peerDependencies": {
+    "@langchain/langgraph": "^0.2.0 || ^0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@langchain/langgraph": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
+    "@types/node": "^24.3.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
