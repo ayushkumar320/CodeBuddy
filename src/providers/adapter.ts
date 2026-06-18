@@ -1,6 +1,30 @@
-export type EmbeddingRequest = {
+export type ProviderCallType = "embedding" | "llm";
+
+export type ProviderCallStatus =
+  | "success"
+  | "failed"
+  | "timeout"
+  | "rate_limited"
+  | "gated"
+  | "fallback";
+
+export type ProviderCallMetadata = {
   model: string;
+  type: ProviderCallType;
+  status: ProviderCallStatus;
+  latencyMs: number;
+  tokens?: number;
+  error?: string;
+  retries: number;
+  fallbackTriggered: boolean;
+  coldStartWaitMs: number;
+};
+
+export type ProviderDiagnosticsHook = (metadata: ProviderCallMetadata) => void | Promise<void>;
+
+export type EmbeddingRequest = {
   input: string | string[];
+  model?: string;
 };
 
 export type EmbeddingResponse = {
@@ -10,8 +34,8 @@ export type EmbeddingResponse = {
 };
 
 export type TextGenerationRequest = {
-  model: string;
   prompt: string;
+  model?: string;
 };
 
 export type TextGenerationResponse = {

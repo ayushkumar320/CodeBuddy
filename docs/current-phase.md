@@ -2,7 +2,7 @@
 
 ## Status
 
-Current phase: `Phase 3 - HF Resilience Layer`
+Current phase: `Phase 4 - Core Memory Pipeline`
 
 Project state:
 
@@ -16,19 +16,22 @@ Project state:
 - dependencies are installed
 - Phase 2 storage and schema scaffold is complete
 - typecheck, lint, and build pass
+- Phase 3 Hugging Face resilience layer is complete
+- provider-layer tests pass
 
 ## What to build next
 
-Build the Hugging Face resilience layer next.
+Build the core SDK memory pipeline next.
 
 Next concrete tasks:
 
-1. Implement the provider adapter behavior for embeddings and text generation.
-2. Build the model registry around the default Hugging Face embedding and LLM models.
-3. Add retry/backoff, timeout, queueing, cold-start handling, warm-cache behavior, and fallback orchestration.
-4. Treat gated model 403s as hard failures with clear guidance.
-5. Add model-call diagnostics hooks for later persistence.
-6. Add mocked unit tests for the resilience failure modes.
+1. Implement `CodeBuddy` config validation with Zod.
+2. Add namespace resolution and session generation.
+3. Implement idempotent `remember` and `rememberBatch`.
+4. Add the in-process async embedding worker lifecycle.
+5. Implement `share` reference/snapshot semantics.
+6. Implement `forget` tombstone/cascade behavior.
+7. Persist provider diagnostics into `model_calls` and operational events into `audit_log`.
 
 ## What not to build yet
 
@@ -42,27 +45,30 @@ Next concrete tasks:
 ## Ready-to-use execution prompt
 
 ```md
-We are in Phase 3 for CodeBuddy.
+We are in Phase 4 for CodeBuddy.
 
-Build the Hugging Face resilience layer only.
+Build the core memory pipeline only.
 
 Rules:
-- Use `@huggingface/inference`.
-- Use `p-retry`, `p-queue`, and `p-timeout`.
-- Implement all live provider behavior behind `src/providers`.
-- Handle 503 cold starts, 429 rate limits, 404 unavailability, 403 gated models, fallback chains, and 90-second timeouts.
-- Record model-call metadata through an injectable hook.
+- Keep provider details behind the adapter.
+- Validate public inputs with Zod.
+- Implement idempotent remember and rememberBatch.
+- Create embedding rows as pending inside the write transaction.
+- Generate embeddings asynchronously outside the transaction.
+- Add worker start, stop, drain, retry, and graceful shutdown hooks.
+- Implement share and forget semantics from `/.rules`.
 - Do not add Docker.
 - Do not implement planner, MCP, CLI, or LangGraph behavior yet.
 - Do not call Hugging Face directly outside the provider layer.
 
 Expected outcome:
-- provider contracts are implemented
-- Hugging Face adapter is resilient and testable
-- mocked resilience tests exist
-- the repo is ready for the core memory pipeline next
+- core SDK methods are implemented
+- memory writes are idempotent
+- async embedding lifecycle works with mocked providers
+- share and forget semantics are covered by tests
+- the repo is ready for planner and tracing next
 ```
 
 ## When to update this file
 
-Update this file immediately after Phase 3 is complete. The next version should point to `Phase 4 - Core Memory Pipeline` and list the exact SDK memory tasks to begin.
+Update this file immediately after Phase 4 is complete. The next version should point to `Phase 5 - Planner And Tracing` and list the exact recall/planner tasks to begin.
