@@ -36,6 +36,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/cli/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "biome check .",
@@ -43,12 +45,12 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "@huggingface/inference": "^3.15.1",
+    "@huggingface/inference": "^4.13.19",
     "@modelcontextprotocol/sdk": "^1.17.5",
     "commander": "^14.0.0",
-    "drizzle-orm": "^0.44.5",
+    "drizzle-orm": "^0.45.2",
     "js-tiktoken": "^1.0.21",
-    "langsmith": "^0.3.66",
+    "langsmith": "^0.7.10",
     "ora": "^8.2.0",
     "p-queue": "^8.1.0",
     "p-retry": "^6.2.1",
@@ -70,6 +72,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
     "@types/node": "^24.3.0",
+    "drizzle-kit": "^0.31.10",
     "tsup": "^8.5.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
