@@ -23,24 +23,20 @@ LLM models:
 
 ## Embedding Dimension Validation
 
-`CodeBuddy.init()` and `codebuddy init` must:
+The Postgres schema stores vectors as `vector(384)`. CodeBuddy validates the built-in embedding model registry so primary and fallback embedding models stay dimension-compatible.
 
-- look up dimensions for primary and fallback embedding models
-- refuse startup if configured dimensions do not match each other
-- refuse startup if configured dimensions do not match existing stored embedding model data
-
-The runtime should compare configured models against any existing rows in `embeddings` before serving traffic.
+When swapping models later, verify existing rows in `embeddings` before serving traffic. Mixed embedding spaces will produce poor recall even when the database accepts the vector shape.
 
 ## Free-Tier Budget Assumptions
 
 `codebuddy doctor` should report:
 
-- calls in last 60 seconds per model
-- calls in last hour per model
-- calls in last 24 hours per model
+- calls in the last 60 seconds
+- calls in the last hour
+- calls in the last 24 hours
 - estimated daily cap remaining
 
-Daily cap defaults should live in config and be documented here. Warn at 80% of the configured daily cap.
+The current default daily estimate is conservative and intended as an operator warning, not an exact Hugging Face quota. Doctor warns at 80% of the estimated cap.
 
 ## Gated Models
 
@@ -90,4 +86,3 @@ Operational note:
 Deferred command:
 
 - `codebuddy reindex <namespace>` in v0.2
-

@@ -1,16 +1,10 @@
 import { z } from "zod";
 import type { CodeBuddyConfig } from "./types.js";
 
-const providerSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("huggingface"),
-    apiKey: z.string().min(1).optional(),
-  }),
-  z.object({
-    type: z.literal("groq"),
-    apiKey: z.string().min(1).optional(),
-  }),
-]);
+const providerSchema = z.object({
+  type: z.literal("huggingface"),
+  apiKey: z.string().min(1).optional(),
+});
 
 export const codeBuddyConfigSchema = z.object({
   postgresUrl: z.string().min(1, "postgresUrl is required"),

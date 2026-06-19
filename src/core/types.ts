@@ -1,8 +1,9 @@
 import type { PlannedContext } from "../planner/types.js";
 
-export type ProviderConfig =
-  | { type: "huggingface"; apiKey?: string }
-  | { type: "groq"; apiKey?: string };
+export type ProviderConfig = {
+  type: "huggingface";
+  apiKey?: string;
+};
 
 export type WorkerConfig = {
   pollIntervalMs?: number;

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "codebuddy": {
+      "command": "npx",
+      "args": ["codebuddy", "serve"],
+      "env": {
+        "DATABASE_URL": "postgres://codebuddy:codebuddy@localhost:5432/codebuddy",
+        "HF_TOKEN": "hf_replace_me",
+        "CODEBUDDY_NAMESPACE": "claude-desktop"
+      }
+    }
+  }
+}

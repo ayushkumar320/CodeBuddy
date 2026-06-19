@@ -99,3 +99,23 @@ High vector counts per namespace may justify index tuning or later reindex work.
 
 Repeated gated-model failures usually mean the Hugging Face license acceptance step was missed.
 
+## Docker Local Database
+
+Start the local database with:
+
+```bash
+docker compose up -d
+export DATABASE_URL=postgres://codebuddy:codebuddy@localhost:5432/codebuddy
+```
+
+If `codebuddy doctor` reports that `pgvector` is unavailable, confirm the running image is `pgvector/pgvector:pg16` and recreate the container if it was previously started from a plain Postgres image.
+
+## Stdio MCP Issues
+
+v0.1 supports MCP over stdio only. Logs are written to stderr so stdout remains reserved for MCP protocol messages.
+
+If a desktop MCP client fails to start CodeBuddy:
+
+- run `codebuddy serve` from a shell with the same `DATABASE_URL` and `HF_TOKEN`
+- run `codebuddy doctor --skip-model-check` to separate database issues from Hugging Face issues
+- use an absolute path to `dist/cli/index.js` for local development configs

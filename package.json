@@ -7,7 +7,7 @@
   "author": "Prashant Raj",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ayushkumar320/CodeBuddy.git"
+    "url": "https://github.com/iprashantraj/codebuddy.git"
   },
   "engines": {
     "node": ">=20"
@@ -32,7 +32,12 @@
     "ARCHITECTURE.md",
     "MODELS.md",
     "TROUBLESHOOTING.md",
-    "WORKFLOW.md"
+    "WORKFLOW.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "RELEASE.md",
+    "docker-compose.yml",
+    "examples"
   ],
   "scripts": {
     "build": "tsup",

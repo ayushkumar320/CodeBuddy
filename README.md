@@ -1,36 +1,57 @@
 # CodeBuddy
 
-MCP memory server for multi-agent systems. Free to run end to end on Hugging Face + Postgres. Drops into LangGraph in one line.
+MCP memory server for multi-agent systems. CodeBuddy stores agent memory in PostgreSQL with pgvector, uses Hugging Face for embeddings and model calls, exposes an MCP stdio server, and drops into LangGraph flows.
 
 ## What It Ships
 
 `codebuddy` is a single npm package with four surfaces:
 
-- a TypeScript SDK
-- an MCP server over stdio
-- a CLI for setup, inspection, recall diagnostics, and health checks
+- TypeScript SDK helpers
+- MCP server over stdio
+- CLI for setup, inspection, export, pruning, stats, and health checks
 - LangGraph helpers
 
-## Installation
-
-Requirements:
+## Requirements
 
 - Node 20+
 - PostgreSQL 16+
 - `pgvector`
+- Hugging Face token
 
 Optional peer dependency:
 
 - `@langchain/langgraph`: `^0.2.0 || ^0.3.0`
 
-CI should test both supported LangGraph ranges.
+## Quick Start
+
+Start local Postgres with pgvector:
+
+```bash
+docker compose up -d
+export DATABASE_URL=postgres://codebuddy:codebuddy@localhost:5432/codebuddy
+export HF_TOKEN=hf_your_token
+```
+
+Build and initialize:
+
+```bash
+npm install
+npm run build
+node dist/cli/index.js init
+node dist/cli/index.js doctor --skip-model-check
+```
+
+Run the MCP server:
+
+```bash
+node dist/cli/index.js serve
+```
 
 ## Configuration
 
 Preferred auth source:
 
-- `HF_TOKEN` environment variable
-- `GROQ_API_KEY` environment variable (when using the Groq provider)
+- `HF_TOKEN`
 
 Supported config file:
 
@@ -38,69 +59,29 @@ Supported config file:
 
 Rules:
 
-- `codebuddy init` must create the config file with `0600` permissions
-- `codebuddy doctor` must warn if permissions are broader than `0600`
-- the token must never be logged and must always be redacted in errors
+- `codebuddy init` creates the config file with `0600` permissions
+- `codebuddy doctor` warns if permissions are broader than `0600`
+- the Hugging Face token must never be logged and is redacted in errors
+- v0.1 uses Hugging Face only; additional providers are out of scope
 
-### Provider choice
+## SDK Example
 
-You can pick the LLM provider via `provider.type`:
-
-```ts
-// Hugging Face for everything (default)
-provider: { type: "huggingface", apiKey: process.env.HF_TOKEN }
-
-// Groq for LLM; Hugging Face still handles embeddings
-provider: { type: "groq", apiKey: process.env.GROQ_API_KEY }
-```
-
-Groq does not expose an embeddings API, so the in-process embedding worker
-always uses Hugging Face — set `HF_TOKEN` even when `provider.type` is `"groq"`.
-Default Groq models are `llama-3.3-70b-versatile` (primary),
-`llama-3.1-8b-instant` (fallback), and `mixtral-8x7b-32768` (last resort).
-
-## Core Concepts
-
-### Namespaces
-
-Namespaces isolate memory across agents or teams. The same `sessionId` in two namespaces is unrelated.
-
-### Sessions
-
-- `sessionId` is opaque and client-provided
-- if omitted on `remember`, CodeBuddy generates `sess_<ulid>` and returns it
-- sessions are scoped to a namespace
-- sessions do not have an explicit end; they are grouping keys for ordering and summaries
-
-### Sharing
-
-Shares are references by default, with optional snapshots.
-
-- `reference`: target namespace reads the live fact and sees future source updates
-- `snapshot`: target namespace gets a copy and future source updates do not propagate
-
-### Conflicts
-
-By default, `recall` returns all matching facts sorted by `confidence x recency`. CodeBuddy does not auto-resolve contradictory facts in v0.1. The consuming LLM is responsible for reconciliation unless the caller narrows behavior with `conflictMode`.
-
-## SDK API
+Use `createRuntime` for production wiring. It creates the Postgres repository, initializes `CodeBuddy`, and returns a `close()` hook that drains the worker and closes the database client.
 
 ```ts
-import { CodeBuddy } from "codebuddy";
+import { createRuntime } from "codebuddy";
 
-const memory = new CodeBuddy({
+const runtime = await createRuntime({
   postgresUrl: process.env.DATABASE_URL!,
   provider: {
     type: "huggingface",
-    apiKey: process.env.HF_TOKEN!,
+    apiKey: process.env.HF_TOKEN,
   },
   namespace: "research-agent",
   tokenBudget: 8000,
 });
 
-await memory.init();
-
-const remembered = await memory.remember({
+const remembered = await runtime.memory.remember({
   sessionId: "sess_123",
   content: "Use layer caching for the Docker build.",
   type: "fact",
@@ -108,12 +89,7 @@ const remembered = await memory.remember({
   agentId: "agent-a",
 });
 
-const batch = await memory.rememberBatch([
-  { sessionId: "sess_123", content: "Agent A likes concise reports.", type: "fact" },
-  { sessionId: "sess_123", content: "The deployment target is eu-west-1.", type: "fact" },
-]);
-
-const context = await memory.recall({
+const context = await runtime.memory.recall({
   sessionId: "sess_123",
   query: "What do we know about deployment?",
   budget: 6000,
@@ -121,42 +97,39 @@ const context = await memory.recall({
   conflictMode: "all",
 });
 
-await memory.share({
+await runtime.memory.share({
   from: "research-agent",
   to: "ops-agent",
-  factIds: ["fact_123"],
+  factIds: [remembered.id],
   mode: "reference",
   agentId: "agent-a",
 });
+
+await runtime.close();
 ```
 
 Notes:
 
-- `recall({ sessionId, query, budget?, callerModel?, conflictMode? })`
-- when `callerModel` is provided, CodeBuddy validates the requested budget against a built-in context-window registry, logs a warning, and clamps if needed
-- every write accepts `agentId?: string`
-- `remember` defaults to `type: "interaction"` when no type is provided
-- v0.1 supports explicit `interaction`, `fact`, and `summary` writes; automatic fact extraction and rolling summaries can be added later behind the same provider layer
+- `remember` defaults to `type: "interaction"`
+- v0.1 supports explicit `interaction`, `fact`, and `summary` writes
+- repeated writes with the same idempotency key or same content return `deduplicated: true`
+- embeddings are prepared asynchronously; recall falls back to recency while vectors are pending
 
 ## MCP Tools
 
 | Tool | Input | Output |
 |---|---|---|
-| `remember` | `{ sessionId?, content, type?, idempotencyKey?, agentId? }` | `{ id, sessionId, deduplicated: boolean }` |
-| `remember_batch` | `{ items: [{ sessionId?, content, type?, idempotencyKey?, agentId? }] }` | `{ items: [{ id, sessionId, deduplicated: boolean }] }` |
+| `remember` | `{ sessionId?, content, type?, idempotencyKey?, agentId? }` | `{ id, sessionId, deduplicated }` |
+| `remember_batch` | `{ items: [{ sessionId?, content, type?, idempotencyKey?, agentId? }] }` | `{ items: [{ id, sessionId, deduplicated }] }` |
 | `recall` | `{ sessionId, query, budget?, callerModel?, conflictMode? }` | `{ system, messages, stats }` |
-| `list_facts` | `{ subject?, limit?: number = 50, cursor?: string }` | `{ facts[], nextCursor?: string }` |
+| `list_facts` | `{ subject?, limit?: number = 50, cursor?: string }` | `{ facts[], nextCursor? }` |
 | `list_namespaces` | `{}` | `{ namespaces: [{ name, factCount, lastActivity }] }` |
-| `forget` | `{ id }` | `{ ok }` |
+| `forget` | `{ id }` | `{ ok, entityType }` |
 | `share` | `{ to_namespace, factIds, mode?: "reference" \| "snapshot", agentId? }` | `{ shared }` |
 
-Retried calls with the same idempotency key, or identical content when the key is omitted, return the original id and `deduplicated: true`.
+v0.1 ships MCP tools only over stdio. Resources, prompts, and HTTP transport are deferred.
 
 ## LangGraph
-
-Supported peer dependency:
-
-- `@langchain/langgraph`: `^0.2.0 || ^0.3.0`
 
 Expected node state shape:
 
@@ -174,6 +147,7 @@ Example:
 ```ts
 import { Annotation, StateGraph } from "@langchain/langgraph";
 import type { BaseMessage } from "@langchain/core/messages";
+import type { PlannedContext } from "codebuddy";
 import { CodeBuddyNode, CodeBuddyCheckpointer } from "codebuddy/langgraph";
 
 const State = Annotation.Root({
@@ -185,9 +159,7 @@ const State = Annotation.Root({
     reducer: (_, right) => right,
     default: () => undefined,
   }),
-  sessionId: Annotation<string>({
-    reducer: (_, right) => right,
-  }),
+  sessionId: Annotation<string>({ reducer: (_, right) => right }),
   agentId: Annotation<string | undefined>({
     reducer: (_, right) => right,
     default: () => undefined,
@@ -198,21 +170,10 @@ const graph = new StateGraph(State)
   .addNode("recall", new CodeBuddyNode({ memory, mode: "recall", cacheTtlSeconds: 30 }))
   .addNode("agent", agentNode)
   .addNode("remember", new CodeBuddyNode({ memory, mode: "remember" }))
-  .compile({ checkpointer: new CodeBuddyCheckpointer({ memory }) });
+  .compile({ checkpointer: new CodeBuddyCheckpointer({ namespace: "research-agent" }) });
 ```
 
-`CodeBuddyNode` defaults to a 30-second recall cache keyed by `(namespace, sessionId, query)`, which helps avoid repeated retrieval inside graph cycles.
-
-## Distribution
-
-v0.1 ships stdio transport only for MCP. HTTP transport with bearer-token auth is deferred to v0.2.
-
-## Privacy And Data Handling
-
-- CodeBuddy stores conversation content in plaintext in Postgres
-- encryption at rest is the user's responsibility at the Postgres layer
-- v0.1 has no automatic PII detection
-- v0.2 is expected to add fact sensitivity metadata and a `--redact` flow
+Recall caching defaults to 30 seconds and is keyed by `(namespace, sessionId, query)`.
 
 ## CLI
 
@@ -227,4 +188,33 @@ codebuddy stats
 codebuddy doctor
 ```
 
-`codebuddy namespaces` is an alias for `inspect` without arguments. `codebuddy inspect` should show per-agent breakdowns for writes.
+`namespaces` lists namespace summaries. `inspect <namespace>` shows facts and per-agent write breakdowns.
+
+## Examples
+
+- `examples/claude-desktop`: MCP stdio config for Claude Desktop
+- `examples/langgraph-agent`: LangGraph recall/agent/remember loop
+- `examples/multi-agent-handoff`: reference and snapshot sharing across namespaces
+
+## Hugging Face Free-Tier Notes
+
+Hugging Face-hosted models may be cold, gated, rate-limited, or temporarily unavailable. CodeBuddy handles cold starts, retries, queueing, fallback models, and timeout reporting, but free-tier limits still matter.
+
+Use:
+
+```bash
+codebuddy doctor
+```
+
+Doctor reports database connectivity, pgvector availability, vector/index health, model reachability, gated-model failures, recent calls, estimated daily cap remaining, and config permissions.
+
+## Privacy
+
+- CodeBuddy stores conversation and fact content in plaintext in Postgres
+- encryption at rest is the deployment owner’s responsibility
+- v0.1 has no automatic PII detection
+- sensitivity metadata and redaction workflows are deferred
+
+## License
+
+MIT
