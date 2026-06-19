@@ -47,5 +47,15 @@ export type {
   SkipReason,
 } from "./planner/index.js";
 export { clampBudgetForCallerModel, countTokens, DefaultPolicy } from "./planner/index.js";
+export type { ModelProvider } from "./providers/adapter.js";
+export type { GroqProviderOptions } from "./providers/groq.js";
+export {
+  GroqAuthError,
+  GroqModelUnavailableError,
+  GroqProvider,
+  GroqRateLimitError,
+} from "./providers/groq.js";
+export type { HuggingFaceProviderOptions } from "./providers/huggingface.js";
+export { HuggingFaceProvider } from "./providers/huggingface.js";
 export type { Tracer, TraceSpan } from "./tracing/langsmith.js";
 export { createTracer, isLangSmithTracingEnabled } from "./tracing/langsmith.js";
