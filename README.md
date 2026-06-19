@@ -30,6 +30,7 @@ CI should test both supported LangGraph ranges.
 Preferred auth source:
 
 - `HF_TOKEN` environment variable
+- `GROQ_API_KEY` environment variable (when using the Groq provider)
 
 Supported config file:
 
@@ -40,6 +41,23 @@ Rules:
 - `codebuddy init` must create the config file with `0600` permissions
 - `codebuddy doctor` must warn if permissions are broader than `0600`
 - the token must never be logged and must always be redacted in errors
+
+### Provider choice
+
+You can pick the LLM provider via `provider.type`:
+
+```ts
+// Hugging Face for everything (default)
+provider: { type: "huggingface", apiKey: process.env.HF_TOKEN }
+
+// Groq for LLM; Hugging Face still handles embeddings
+provider: { type: "groq", apiKey: process.env.GROQ_API_KEY }
+```
+
+Groq does not expose an embeddings API, so the in-process embedding worker
+always uses Hugging Face — set `HF_TOKEN` even when `provider.type` is `"groq"`.
+Default Groq models are `llama-3.3-70b-versatile` (primary),
+`llama-3.1-8b-instant` (fallback), and `mixtral-8x7b-32768` (last resort).
 
 ## Core Concepts
 

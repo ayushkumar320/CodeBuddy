@@ -56,7 +56,35 @@ export const DEFAULT_LLM_MODELS = [
   },
 ] satisfies ModelDefinition[];
 
-export const MODEL_REGISTRY = [...DEFAULT_EMBEDDING_MODELS, ...DEFAULT_LLM_MODELS];
+export const DEFAULT_GROQ_LLM_MODELS = [
+  {
+    id: "llama-3.3-70b-versatile",
+    role: "primary",
+    kind: "llm",
+    contextWindow: 131_072,
+    dailyCallBudget: 1_000,
+  },
+  {
+    id: "llama-3.1-8b-instant",
+    role: "fallback",
+    kind: "llm",
+    contextWindow: 131_072,
+    dailyCallBudget: 1_000,
+  },
+  {
+    id: "mixtral-8x7b-32768",
+    role: "last_resort",
+    kind: "llm",
+    contextWindow: 32_768,
+    dailyCallBudget: 1_000,
+  },
+] satisfies ModelDefinition[];
+
+export const MODEL_REGISTRY = [
+  ...DEFAULT_EMBEDDING_MODELS,
+  ...DEFAULT_LLM_MODELS,
+  ...DEFAULT_GROQ_LLM_MODELS,
+];
 
 export function getModelDefinition(modelId: string): ModelDefinition | undefined {
   return MODEL_REGISTRY.find((model) => model.id === modelId);

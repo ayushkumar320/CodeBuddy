@@ -2,6 +2,7 @@ import { clampBudgetForCallerModel } from "../planner/budget.js";
 import { DefaultPolicy } from "../planner/default-policy.js";
 import type { ContextPolicy, PlanInput } from "../planner/types.js";
 import type { ModelProvider } from "../providers/adapter.js";
+import { GroqProvider } from "../providers/groq.js";
 import { HuggingFaceProvider } from "../providers/huggingface.js";
 import { DEFAULT_EMBEDDING_MODELS } from "../providers/models.js";
 import { createTracer, type Tracer } from "../tracing/langsmith.js";
@@ -64,11 +65,7 @@ export class CodeBuddy {
       );
     }
     this.repo = deps.repository;
-    this.provider =
-      deps.provider ??
-      new HuggingFaceProvider(
-        this.config.provider.apiKey ? { apiKey: this.config.provider.apiKey } : {},
-      );
+    this.provider = deps.provider ?? buildProviderFromConfig(this.config.provider);
     this.worker =
       deps.worker ??
       new EmbeddingWorker({
@@ -391,4 +388,11 @@ function estimateTokenCount(content: string): number {
 
 export function newEntityId(prefix: string): string {
   return `${prefix}_${generateUlid().toLowerCase()}`;
+}
+
+function buildProviderFromConfig(provider: ValidatedCodeBuddyConfig["provider"]): ModelProvider {
+  if (provider.type === "groq") {
+    return new GroqProvider(provider.apiKey ? { apiKey: provider.apiKey } : {});
+  }
+  return new HuggingFaceProvider(provider.apiKey ? { apiKey: provider.apiKey } : {});
 }
