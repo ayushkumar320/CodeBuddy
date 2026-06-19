@@ -11,7 +11,7 @@ export type StartMcpServerOptions = {
 
 export async function startMcpServer(options: StartMcpServerOptions = {}): Promise<void> {
   const logger = pino({ level: process.env.LOG_LEVEL ?? "info" }, process.stderr);
-  const runtime = await createRuntime(options.config);
+  const runtime = await createRuntime(options.config, { autoBootstrap: true });
   const server = new McpServer({ name: "codebuddy", version: "0.0.0" });
   registerCodeBuddyTools(server, {
     memory: runtime.memory,

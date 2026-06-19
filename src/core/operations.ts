@@ -1,5 +1,6 @@
-import { checkPgvector } from "../db/bootstrap.js";
+import { bootstrapDatabase, checkPgvector } from "../db/bootstrap.js";
 import { createDatabaseClient, pingDatabase } from "../db/client.js";
+import { runMigrations } from "../db/migrator.js";
 import { createPostgresRepository } from "../db/repository.js";
 import type { ModelProvider } from "../providers/adapter.js";
 import { DEFAULT_EMBEDDING_MODELS, DEFAULT_LLM_MODELS } from "../providers/models.js";
@@ -14,9 +15,25 @@ export type RuntimeHandle = {
   close(): Promise<void>;
 };
 
-export async function createRuntime(config?: CodeBuddyConfig): Promise<RuntimeHandle> {
+export type CreateRuntimeOptions = {
+  /**
+   * When true (default for `serve`), enable pgvector and apply any pending
+   * SQL migrations before the SDK initialises. Safe to run repeatedly —
+   * Drizzle skips migrations it has already applied.
+   */
+  autoBootstrap?: boolean;
+};
+
+export async function createRuntime(
+  config?: CodeBuddyConfig,
+  options: CreateRuntimeOptions = {},
+): Promise<RuntimeHandle> {
   const runtimeConfig = config ?? (await loadRuntimeConfig());
   const client = createDatabaseClient({ postgresUrl: runtimeConfig.postgresUrl });
+  if (options.autoBootstrap) {
+    await bootstrapDatabase(client.sql);
+    await runMigrations(client);
+  }
   const repository = createPostgresRepository(client);
   const memory = new CodeBuddy(runtimeConfig, { repository });
   await memory.init();

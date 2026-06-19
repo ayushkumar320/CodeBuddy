@@ -3,7 +3,17 @@ import { Command } from "commander";
 import pc from "picocolors";
 import { initConfigFile, loadRuntimeConfig, redactSecrets } from "../core/config-file.js";
 import { createRuntime, inspectNamespace, listFactsPage, runDoctor } from "../core/operations.js";
+import { bootstrapDatabase } from "../db/bootstrap.js";
+import { createDatabaseClient } from "../db/client.js";
+import { runMigrations } from "../db/migrator.js";
 import { startMcpServer } from "../mcp/server.js";
+import {
+  installClaudeEntry,
+  listClaudeEntries,
+  removeClaudeEntry,
+} from "./commands/claude-desktop.js";
+import { runInitWizard } from "./commands/init-wizard.js";
+import { postgresDown, postgresStatus, postgresUp } from "./commands/postgres-docker.js";
 
 export function createCli(): Command {
   const program = new Command();
@@ -15,11 +25,136 @@ export function createCli(): Command {
 
   program
     .command("init")
-    .description("Create .codebuddy/config.json with safe permissions.")
+    .description("Interactive setup: config file, Postgres, migrations, Claude Desktop.")
+    .option("--non-interactive", "Skip the wizard; just create .codebuddy/config.json.")
+    .action(async (opts: { nonInteractive?: boolean }) => {
+      await runSafely(async () => {
+        if (opts.nonInteractive || !process.stdin.isTTY) {
+          const result = await initConfigFile();
+          console.log(`${result.created ? "created" : "updated permissions"} ${result.path}`);
+          return;
+        }
+        await runInitWizard();
+      });
+    });
+
+  program
+    .command("migrate")
+    .description("Apply pending database migrations.")
     .action(async () => {
       await runSafely(async () => {
-        const result = await initConfigFile();
-        console.log(`${result.created ? "created" : "updated permissions"} ${result.path}`);
+        const config = await loadRuntimeConfig();
+        const client = createDatabaseClient({ postgresUrl: config.postgresUrl });
+        try {
+          await bootstrapDatabase(client.sql);
+          await runMigrations(client);
+          console.log("migrations applied");
+        } finally {
+          await client.close();
+        }
+      });
+    });
+
+  const postgres = program
+    .command("postgres")
+    .description("Manage the bundled Postgres container.");
+  postgres
+    .command("up")
+    .description("Start the bundled Postgres container (docker compose up -d).")
+    .action(async () => {
+      await runSafely(async () => {
+        const result = await postgresUp();
+        process.stdout.write(result.stdout);
+        if (result.code !== 0) {
+          process.stderr.write(result.stderr);
+          process.exitCode = result.code;
+        }
+      });
+    });
+  postgres
+    .command("down")
+    .description("Stop the bundled Postgres container (data volume preserved).")
+    .action(async () => {
+      await runSafely(async () => {
+        const result = await postgresDown();
+        process.stdout.write(result.stdout);
+        if (result.code !== 0) {
+          process.stderr.write(result.stderr);
+          process.exitCode = result.code;
+        }
+      });
+    });
+  postgres
+    .command("status")
+    .description("docker compose ps for the bundled Postgres container.")
+    .action(async () => {
+      await runSafely(async () => {
+        const result = await postgresStatus();
+        process.stdout.write(result.stdout);
+        if (result.code !== 0) {
+          process.stderr.write(result.stderr);
+          process.exitCode = result.code;
+        }
+      });
+    });
+
+  const claude = program
+    .command("claude")
+    .description("Register CodeBuddy as an MCP server in Claude Desktop.");
+  claude
+    .command("install")
+    .option("--namespace <name>", "Namespace for this Claude Desktop entry.")
+    .option("--server-name <name>", "Override the server key. Defaults to codebuddy-<namespace>.")
+    .description("Add or update a codebuddy MCP entry in Claude Desktop's config.")
+    .action(async (opts: { namespace?: string; serverName?: string }) => {
+      await runSafely(async () => {
+        const config = await loadRuntimeConfig();
+        const namespace = opts.namespace ?? config.namespace ?? "default";
+        const install = await installClaudeEntry({
+          namespace,
+          ...(config.provider.apiKey ? { hfToken: config.provider.apiKey } : {}),
+          ...(process.env.GROQ_API_KEY ? { groqApiKey: process.env.GROQ_API_KEY } : {}),
+          databaseUrl: config.postgresUrl,
+          ...(opts.serverName ? { serverName: opts.serverName } : {}),
+        });
+        console.log(
+          `${install.created ? "added" : "updated"} ${install.serverKey} in ${install.path}`,
+        );
+        console.log("Restart Claude Desktop (⌘Q) to activate.");
+      });
+    });
+  claude
+    .command("list")
+    .description("List codebuddy entries currently registered in Claude Desktop.")
+    .action(async () => {
+      await runSafely(async () => {
+        const result = await listClaudeEntries();
+        if (result.entries.length === 0) {
+          console.log(`No codebuddy entries in ${result.path}.`);
+          return;
+        }
+        console.log(`Claude Desktop config: ${result.path}`);
+        for (const entry of result.entries) {
+          console.log(
+            `  ${entry.key}  namespace=${entry.namespace ?? "?"}  db=${entry.databaseUrl ?? "?"}`,
+          );
+        }
+      });
+    });
+  claude
+    .command("remove")
+    .argument("<serverKey>", "e.g. codebuddy-work")
+    .description("Remove a codebuddy entry from Claude Desktop's config.")
+    .action(async (serverKey: string) => {
+      await runSafely(async () => {
+        const result = await removeClaudeEntry(serverKey);
+        if (result.removed) {
+          console.log(`removed ${serverKey} from ${result.path}`);
+          console.log("Restart Claude Desktop (⌘Q) for the change to take effect.");
+        } else {
+          console.log(`no entry "${serverKey}" found in ${result.path}`);
+          process.exitCode = 1;
+        }
       });
     });
 
