@@ -5,17 +5,25 @@ export type ProviderConfig = {
   apiKey?: string;
 };
 
+export type WorkerConfig = {
+  pollIntervalMs?: number;
+  batchSize?: number;
+  maxAttempts?: number;
+};
+
 export type CodeBuddyConfig = {
   postgresUrl: string;
   provider: ProviderConfig;
   namespace: string;
   tokenBudget?: number;
+  worker?: WorkerConfig;
 };
 
 export type CodeBuddyStatus = {
   ready: boolean;
   phase: "foundation" | "storage" | "runtime";
   message: string;
+  namespaceId: string;
 };
 
 export type MemoryWriteType = "interaction" | "fact" | "summary";
@@ -53,3 +61,16 @@ export type ShareInput = {
   mode?: "reference" | "snapshot";
   agentId?: string;
 };
+
+export type ShareResult = {
+  shared: number;
+};
+
+export type ForgetResult = {
+  ok: boolean;
+  entityType: "interaction" | "fact" | "unknown";
+};
+
+export type EmbeddingJobStatus = "pending" | "ready" | "failed";
+
+export type AuditAction = "remember" | "remember_batch" | "share" | "forget" | "config";

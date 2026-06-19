@@ -2,45 +2,43 @@
 
 ## Status
 
-Current phase: `Phase 4 - Core Memory Pipeline`
+Current phase: `Phase 5 - Planner And Tracing`
 
 Project state:
 
-- documentation has been updated to the upgraded single-package plan
-- root product docs now define the improved target behavior
-- `/.rules` now consolidates the complete build context
-- `/WORKFLOW.md` explains the app flow in plain language and detail
 - Phase 1 foundation scaffold is complete
-- root package/tooling files now exist
-- source and example placeholders now exist
-- dependencies are installed
 - Phase 2 storage and schema scaffold is complete
-- typecheck, lint, and build pass
 - Phase 3 Hugging Face resilience layer is complete
-- provider-layer tests pass
+- Phase 4 core memory pipeline is complete
+- `CodeBuddy` SDK validates config with Zod and resolves namespaces on `init`
+- `remember` and `rememberBatch` are idempotent via content hash or `idempotencyKey`
+- Session ids auto-generate as `sess_<ulid>` when omitted
+- `MemoryRepository` abstraction backs both an in-memory test fake and a Drizzle-backed Postgres implementation
+- In-process embedding worker supports start/notify/drain/stop/shutdown and persists `model_calls`
+- `share` writes reference and snapshot rows + `audit_log`
+- `forget` hard-deletes the interaction/fact, drops the embedding, tombstones reference shares, and marks dependent facts `source_deleted`
+- typecheck, lint, build, and tests pass (28 tests across resilience, HF, and core)
 
 ## What to build next
 
-Build the core SDK memory pipeline next.
+Build the recall planner and tracing.
 
 Next concrete tasks:
 
-1. Implement `CodeBuddy` config validation with Zod.
-2. Add namespace resolution and session generation.
-3. Implement idempotent `remember` and `rememberBatch`.
-4. Add the in-process async embedding worker lifecycle.
-5. Implement `share` reference/snapshot semantics.
-6. Implement `forget` tombstone/cascade behavior.
-7. Persist provider diagnostics into `model_calls` and operational events into `audit_log`.
+1. Implement `recall({ sessionId, query, budget?, callerModel?, conflictMode? })`.
+2. Implement the default context policy with recency floor + vector similarity ranking.
+3. Add budget packing keyed on `js-tiktoken` token counts.
+4. Validate `budget` against the model context-window registry, warn, and clamp.
+5. Implement fallback to recency + summaries when embeddings are pending or failed.
+6. Wire LangSmith tracing around provider calls, planner decisions, and tool invocations.
+7. Return `{ system, messages, stats }` with full stats fields.
 
 ## What not to build yet
 
 - Docker
-- planner logic
 - MCP tools
 - LangGraph integration
 - CLI command behavior beyond placeholders
-- direct Hugging Face calls outside the provider layer
 
 ## Ready-to-use execution prompt
 
