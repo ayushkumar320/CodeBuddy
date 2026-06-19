@@ -135,6 +135,22 @@ export async function runDoctor(
   }
 
   try {
+    if (!db.ok) {
+      return {
+        db,
+        pgvector,
+        vectors: { count: 0, index: null, needsTuning: false },
+        models: await checkModels(options.provider, true),
+        usage: {
+          last60s: 0,
+          lastHour: 0,
+          last24h: 0,
+          estimatedDailyCapRemaining: 10_000,
+          warning80Percent: false,
+        },
+        config: await checkConfigPermissions(),
+      };
+    }
     const namespace = await repository.ensureNamespace(config.namespace);
     const [stats, vectorHealth] = await Promise.all([
       repository.getStats(namespace.id),

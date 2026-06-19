@@ -193,6 +193,7 @@ codebuddy doctor
 ## Examples
 
 - `examples/claude-desktop`: MCP stdio config for Claude Desktop
+- `examples/claude-code`: project MCP config for Claude Code
 - `examples/langgraph-agent`: LangGraph recall/agent/remember loop
 - `examples/multi-agent-handoff`: reference and snapshot sharing across namespaces
 
