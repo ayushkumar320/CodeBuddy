@@ -2,67 +2,65 @@
 
 ## Status
 
-Current phase: `Phase 6 - MCP, LangGraph, CLI`
+Current phase: `Phase 7 - Examples, Docker, Release`
 
 Project state:
 
-- Phases 1–5 are complete
-- `recall({ sessionId, query, budget?, callerModel?, conflictMode? })` orchestrates a planner pipeline that returns `{ system, messages, stats }`
-- `DefaultPolicy` ranks ready embeddings by cosine similarity, applies a recency floor, supports `all`/`latest`/`highest_confidence` conflict modes, and packs into a token budget
-- Token counting uses `js-tiktoken` (cl100k base) with a length-based fallback
-- Caller-model budget clamp validates against `getModelContextWindow` and reports `budgetClamped` + `budgetClampReason`
-- Embedding-coverage stats (`ready`, `pending`, `failed`) and `skipReasons` are surfaced on every recall
-- Pending-embedding fallback returns recency + latest summary without blocking on the worker
-- LangSmith tracing wrappers (`createTracer`) auto-enable on `LANGCHAIN_TRACING_V2=true` and wrap planner + provider spans
-- typecheck, lint, build, and tests pass (36 tests; planner + recall covered)
+- Phases 1-6 are complete
+- SDK remember, rememberBatch, recall, share, and forget are implemented
+- Planner and LangSmith tracing are implemented
+- MCP v0.1 stdio server exists with tools only
+- MCP tools: `remember`, `remember_batch`, `recall`, `list_facts`, `list_namespaces`, `forget`, `share`
+- `list_facts` uses opaque base64url cursors based on `(created_at, id)`
+- LangGraph helpers exist: `CodeBuddyNode` and `CodeBuddyCheckpointer`
+- `CodeBuddyNode` supports expected state: `messages`, `memory`, `sessionId`, `agentId`
+- Recall node cache defaults to 30 seconds and is keyed by `(namespace, sessionId, query)`
+- CLI commands exist: `init`, `serve`, `inspect`, `namespaces`, `prune`, `export`, `stats`, `doctor`
+- Config loading prefers `HF_TOKEN` over file tokens and `init` writes `.codebuddy/config.json` with `0600`
+- `doctor` reports DB, pgvector, vector/index health, model status, recent usage, daily cap estimate, and config permissions
+- typecheck, lint, build, and tests pass (42 tests)
 
 ## What to build next
 
-Build the user-facing surfaces.
+Build final developer experience and release artifacts.
 
 Next concrete tasks:
 
-1. Implement MCP stdio server tools: `remember`, `remember_batch`, `recall`, `list_facts`, `list_namespaces`, `forget`, `share`.
-2. Implement `list_facts` pagination with an opaque base64 cursor.
-3. Implement `CodeBuddyNode` and `CodeBuddyCheckpointer` for LangGraph (with 30s recall cache).
-4. Implement CLI commands: `init`, `serve`, `inspect`, `namespaces`, `prune`, `export`, `stats`, `doctor`.
-5. Enforce `0600` permissions on `.codebuddy/config.json`; prefer `HF_TOKEN` over file tokens.
-6. Wire structured logging via `pino` (JSON to stderr for MCP, `pino-pretty` for TTY CLI).
-7. Add graceful shutdown to `serve` that drains the embedding worker.
+1. Flesh out examples for Claude Desktop, LangGraph agent, and multi-agent handoff.
+2. Add Docker Compose for PostgreSQL 16 plus pgvector.
+3. Finalize release documentation.
+4. Add any missing package metadata, contribution docs, and license artifacts required for release.
+5. Verify the package can be built and used from the documented install paths.
 
 ## What not to build yet
 
-- Docker
-- examples beyond what already exists
-- HTTP transport (deferred to v0.2)
+- HTTP MCP transport
+- Hosted service behavior
+- Dashboard UI
+- Provider support beyond Hugging Face
 
 ## Ready-to-use execution prompt
 
 ```md
-We are in Phase 4 for CodeBuddy.
+Build Phase 7 for CodeBuddy.
 
-Build the core memory pipeline only.
+Goal:
+Finish examples, Docker, and release documentation without adding new product scope.
 
 Rules:
-- Keep provider details behind the adapter.
-- Validate public inputs with Zod.
-- Implement idempotent remember and rememberBatch.
-- Create embedding rows as pending inside the write transaction.
-- Generate embeddings asynchronously outside the transaction.
-- Add worker start, stop, drain, retry, and graceful shutdown hooks.
-- Implement share and forget semantics from `/.rules`.
-- Do not add Docker.
-- Do not implement planner, MCP, CLI, or LangGraph behavior yet.
-- Do not call Hugging Face directly outside the provider layer.
+- Do not add HTTP MCP transport.
+- Do not add Redis, hosted service behavior, dashboard UI, or non-Hugging Face providers.
+- Keep examples runnable and aligned with the README public APIs.
+- Docker is for local Postgres + pgvector support only.
+- Release docs must reflect the actual Phase 6 CLI, MCP, SDK, and LangGraph surfaces.
 
 Expected outcome:
-- core SDK methods are implemented
-- memory writes are idempotent
-- async embedding lifecycle works with mocked providers
-- share and forget semantics are covered by tests
-- the repo is ready for planner and tracing next
+- examples are complete and accurate
+- Docker Compose can start the required database
+- release docs and package metadata are ready
+- verification commands pass
 ```
 
 ## When to update this file
 
-Update this file immediately after Phase 4 is complete. The next version should point to `Phase 5 - Planner And Tracing` and list the exact recall/planner tasks to begin.
+Update this file after Phase 7 is complete to mark the implementation release-ready.

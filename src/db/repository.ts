@@ -1,15 +1,20 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { generateEntityId } from "../core/ids.js";
 import type {
+  AgentWriteBreakdown,
   AuditEntry,
   EmbeddingJob,
   EmbeddingStatusSnapshot,
+  FactCursor,
   FactInsert,
   InteractionInsert,
+  ListedFact,
   MemoryRepository,
+  MemoryStats,
   ModelCallEntry,
   NamespaceRow,
+  NamespaceSummary,
   PendingEmbeddingCounts,
   PendingEmbeddingInsert,
   ReadyEmbedding,
@@ -18,6 +23,7 @@ import type {
   RecentSummary,
   ShareWriteInput,
   SummaryInsert,
+  VectorIndexHealth,
   WriteResult,
 } from "../core/repository.js";
 import type { DatabaseClient } from "./client.js";
@@ -573,6 +579,224 @@ export class PostgresMemoryRepository implements MemoryRepository {
       else if (row.status === "ready") ready = value;
     }
     return { pending, failed, ready };
+  }
+
+  async listFacts(input: {
+    namespaceId: string;
+    subject?: string;
+    limit: number;
+    cursor?: FactCursor;
+  }): Promise<ListedFact[]> {
+    const where = [
+      eq(facts.namespaceId, input.namespaceId),
+      eq(facts.sourceDeleted, false),
+      input.subject ? eq(facts.subject, input.subject) : undefined,
+      input.cursor
+        ? or(
+            lt(facts.createdAt, input.cursor.createdAt),
+            and(eq(facts.createdAt, input.cursor.createdAt), lt(facts.id, input.cursor.id)),
+          )
+        : undefined,
+    ].filter((clause): clause is NonNullable<typeof clause> => Boolean(clause));
+    const rows = await this.db
+      .select({
+        id: facts.id,
+        subject: facts.subject,
+        predicate: facts.predicate,
+        object: facts.object,
+        content: facts.content,
+        confidence: facts.confidence,
+        sourceDeleted: facts.sourceDeleted,
+        createdByAgent: facts.createdByAgent,
+        createdAt: facts.createdAt,
+      })
+      .from(facts)
+      .where(and(...where))
+      .orderBy(desc(facts.createdAt), desc(facts.id))
+      .limit(input.limit);
+    return rows.map((row) => ({ ...row, confidence: Number(row.confidence ?? 1) }));
+  }
+
+  async listNamespaces(): Promise<NamespaceSummary[]> {
+    const rows = await this.client.sql<
+      { name: string; fact_count: string; last_activity: Date | null }[]
+    >`
+      select
+        n.name,
+        count(f.id)::text as fact_count,
+        greatest(
+          max(f.created_at),
+          max(i.created_at),
+          max(s.created_at),
+          n.updated_at
+        ) as last_activity
+      from namespaces n
+      left join facts f on f.namespace_id = n.id and f.source_deleted = false
+      left join interactions i on i.namespace_id = n.id
+      left join session_summaries s on s.namespace_id = n.id
+      group by n.id, n.name, n.updated_at
+      order by last_activity desc nulls last, n.name asc
+    `;
+    return rows.map((row) => ({
+      name: row.name,
+      factCount: Number(row.fact_count),
+      lastActivity: row.last_activity,
+    }));
+  }
+
+  async getAgentWriteBreakdown(namespaceId?: string): Promise<AgentWriteBreakdown[]> {
+    const rows = namespaceId
+      ? await this.client.sql<{ agent_id: string | null; writes: string }[]>`
+          select agent_id, sum(writes)::text as writes
+          from (
+            select created_by_agent as agent_id, count(*) as writes from interactions where namespace_id = ${namespaceId} group by created_by_agent
+            union all
+            select created_by_agent as agent_id, count(*) as writes from facts where namespace_id = ${namespaceId} group by created_by_agent
+            union all
+            select created_by_agent as agent_id, count(*) as writes from session_summaries where namespace_id = ${namespaceId} group by created_by_agent
+          ) t
+          group by agent_id
+          order by writes desc
+        `
+      : await this.client.sql<{ agent_id: string | null; writes: string }[]>`
+          select agent_id, sum(writes)::text as writes
+          from (
+            select created_by_agent as agent_id, count(*) as writes from interactions group by created_by_agent
+            union all
+            select created_by_agent as agent_id, count(*) as writes from facts group by created_by_agent
+            union all
+            select created_by_agent as agent_id, count(*) as writes from session_summaries group by created_by_agent
+          ) t
+          group by agent_id
+          order by writes desc
+        `;
+    return rows.map((row) => ({ agentId: row.agent_id, writes: Number(row.writes) }));
+  }
+
+  async getStats(namespaceId?: string): Promise<MemoryStats> {
+    const namespaceRows = await this.client.sql<
+      { count: string }[]
+    >`select count(*)::text as count from namespaces`;
+    const interactionRows = namespaceId
+      ? await this.client.sql<
+          { count: string }[]
+        >`select count(*)::text as count from interactions where namespace_id = ${namespaceId}`
+      : await this.client.sql<
+          { count: string }[]
+        >`select count(*)::text as count from interactions`;
+    const factRows = namespaceId
+      ? await this.client.sql<
+          { count: string }[]
+        >`select count(*)::text as count from facts where namespace_id = ${namespaceId}`
+      : await this.client.sql<{ count: string }[]>`select count(*)::text as count from facts`;
+    const summaryRows = namespaceId
+      ? await this.client.sql<
+          { count: string }[]
+        >`select count(*)::text as count from session_summaries where namespace_id = ${namespaceId}`
+      : await this.client.sql<
+          { count: string }[]
+        >`select count(*)::text as count from session_summaries`;
+    const embeddingRows = namespaceId
+      ? await this.client.sql<{ status: string; count: string }[]>`
+          select status::text as status, count(*)::text as count from embeddings where namespace_id = ${namespaceId} group by status
+        `
+      : await this.client.sql<{ status: string; count: string }[]>`
+          select status::text as status, count(*)::text as count from embeddings group by status
+        `;
+    const callRows = namespaceId
+      ? await this.client.sql<
+          { last_60s: string; last_hour: string; last_24h: string; gated_failures: string }[]
+        >`
+          select
+            count(*) filter (where created_at >= now() - interval '60 seconds')::text as last_60s,
+            count(*) filter (where created_at >= now() - interval '1 hour')::text as last_hour,
+            count(*) filter (where created_at >= now() - interval '24 hours')::text as last_24h,
+            count(*) filter (where status = 'gated' and created_at >= now() - interval '24 hours')::text as gated_failures
+          from model_calls
+          where namespace_id = ${namespaceId}
+        `
+      : await this.client.sql<
+          { last_60s: string; last_hour: string; last_24h: string; gated_failures: string }[]
+        >`
+          select
+            count(*) filter (where created_at >= now() - interval '60 seconds')::text as last_60s,
+            count(*) filter (where created_at >= now() - interval '1 hour')::text as last_hour,
+            count(*) filter (where created_at >= now() - interval '24 hours')::text as last_24h,
+            count(*) filter (where status = 'gated' and created_at >= now() - interval '24 hours')::text as gated_failures
+          from model_calls
+        `;
+    const embeddingsCount = { pending: 0, failed: 0, ready: 0 };
+    for (const row of embeddingRows) {
+      if (row.status === "pending") embeddingsCount.pending = Number(row.count);
+      if (row.status === "failed") embeddingsCount.failed = Number(row.count);
+      if (row.status === "ready") embeddingsCount.ready = Number(row.count);
+    }
+    const calls = callRows[0] ?? {
+      last_60s: "0",
+      last_hour: "0",
+      last_24h: "0",
+      gated_failures: "0",
+    };
+    return {
+      namespaces: Number(namespaceRows[0]?.count ?? 0),
+      interactions: Number(interactionRows[0]?.count ?? 0),
+      facts: Number(factRows[0]?.count ?? 0),
+      summaries: Number(summaryRows[0]?.count ?? 0),
+      embeddings: embeddingsCount,
+      modelCalls: {
+        last60s: Number(calls.last_60s),
+        lastHour: Number(calls.last_hour),
+        last24h: Number(calls.last_24h),
+        gatedFailures: Number(calls.gated_failures),
+      },
+    };
+  }
+
+  async pruneBefore(
+    cutoff: Date,
+  ): Promise<{ interactions: number; facts: number; summaries: number }> {
+    return this.db.transaction(async (tx) => {
+      const deletedInteractions = await tx
+        .delete(interactions)
+        .where(lt(interactions.createdAt, cutoff))
+        .returning({ id: interactions.id });
+      const deletedFacts = await tx
+        .delete(facts)
+        .where(lt(facts.createdAt, cutoff))
+        .returning({ id: facts.id });
+      const deletedSummaries = await tx
+        .delete(sessionSummaries)
+        .where(lt(sessionSummaries.createdAt, cutoff))
+        .returning({ id: sessionSummaries.id });
+      return {
+        interactions: deletedInteractions.length,
+        facts: deletedFacts.length,
+        summaries: deletedSummaries.length,
+      };
+    });
+  }
+
+  async getVectorIndexHealth(namespaceId?: string): Promise<VectorIndexHealth> {
+    const countRows = namespaceId
+      ? await this.client.sql<
+          { count: string }[]
+        >`select count(*)::text as count from embeddings where namespace_id = ${namespaceId}`
+      : await this.client.sql<{ count: string }[]>`select count(*)::text as count from embeddings`;
+    const indexRows = await this.client.sql<{ indexname: string; indexdef: string }[]>`
+      select indexname, indexdef from pg_indexes
+      where schemaname = current_schema()
+        and tablename = 'embeddings'
+        and indexname = 'embeddings_vector_hnsw_idx'
+      limit 1
+    `;
+    const vectorCount = Number(countRows[0]?.count ?? 0);
+    const index = indexRows[0];
+    return {
+      vectorCount,
+      indexName: index?.indexname ?? null,
+      indexDefinition: index?.indexdef ?? null,
+      needsTuning: vectorCount >= 100_000,
+    };
   }
 }
 

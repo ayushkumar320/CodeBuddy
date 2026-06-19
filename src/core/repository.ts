@@ -133,6 +133,55 @@ export type PendingEmbeddingCounts = {
   ready: number;
 };
 
+export type ListedFact = {
+  id: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  content: string;
+  confidence: number;
+  sourceDeleted: boolean;
+  createdByAgent: string | null;
+  createdAt: Date;
+};
+
+export type FactCursor = {
+  createdAt: Date;
+  id: string;
+};
+
+export type NamespaceSummary = {
+  name: string;
+  factCount: number;
+  lastActivity: Date | null;
+};
+
+export type AgentWriteBreakdown = {
+  agentId: string | null;
+  writes: number;
+};
+
+export type MemoryStats = {
+  namespaces: number;
+  interactions: number;
+  facts: number;
+  summaries: number;
+  embeddings: PendingEmbeddingCounts;
+  modelCalls: {
+    last60s: number;
+    lastHour: number;
+    last24h: number;
+    gatedFailures: number;
+  };
+};
+
+export type VectorIndexHealth = {
+  vectorCount: number;
+  indexName: string | null;
+  indexDefinition: string | null;
+  needsTuning: boolean;
+};
+
 export type MemoryRepository = {
   ensureNamespace(name: string): Promise<NamespaceRow>;
   getNamespaceByName(name: string): Promise<NamespaceRow | null>;
@@ -187,4 +236,16 @@ export type MemoryRepository = {
   getFactsByIds(namespaceId: string, ids: string[]): Promise<RecentFact[]>;
   getSummariesByIds(namespaceId: string, ids: string[]): Promise<RecentSummary[]>;
   countEmbeddingStatuses(namespaceId: string): Promise<PendingEmbeddingCounts>;
+
+  listFacts(input: {
+    namespaceId: string;
+    subject?: string;
+    limit: number;
+    cursor?: FactCursor;
+  }): Promise<ListedFact[]>;
+  listNamespaces(): Promise<NamespaceSummary[]>;
+  getAgentWriteBreakdown(namespaceId?: string): Promise<AgentWriteBreakdown[]>;
+  getStats(namespaceId?: string): Promise<MemoryStats>;
+  pruneBefore(cutoff: Date): Promise<{ interactions: number; facts: number; summaries: number }>;
+  getVectorIndexHealth(namespaceId?: string): Promise<VectorIndexHealth>;
 };

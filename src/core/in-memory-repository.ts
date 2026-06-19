@@ -1,13 +1,18 @@
 import { generateEntityId } from "./ids.js";
 import type {
+  AgentWriteBreakdown,
   AuditEntry,
   EmbeddingJob,
   EmbeddingStatusSnapshot,
+  FactCursor,
   FactInsert,
   InteractionInsert,
+  ListedFact,
   MemoryRepository,
+  MemoryStats,
   ModelCallEntry,
   NamespaceRow,
+  NamespaceSummary,
   PendingEmbeddingCounts,
   PendingEmbeddingInsert,
   ReadyEmbedding,
@@ -16,6 +21,7 @@ import type {
   RecentSummary,
   ShareWriteInput,
   SummaryInsert,
+  VectorIndexHealth,
   WriteResult,
 } from "./repository.js";
 import type { EmbeddingJobStatus, MemoryWriteType } from "./types.js";
@@ -405,6 +411,146 @@ export class InMemoryMemoryRepository implements MemoryRepository {
       else if (row.status === "ready") ready += 1;
     }
     return { pending, failed, ready };
+  }
+
+  async listFacts(input: {
+    namespaceId: string;
+    subject?: string;
+    limit: number;
+    cursor?: FactCursor;
+  }): Promise<ListedFact[]> {
+    const cursorTime = input.cursor?.createdAt.getTime();
+    return Array.from(this.facts.values())
+      .filter((row) => row.namespaceId === input.namespaceId && !row.sourceDeleted)
+      .filter((row) => !input.subject || row.subject === input.subject)
+      .filter((row) => {
+        if (!input.cursor || cursorTime === undefined) return true;
+        if (row.createdAt < cursorTime) return true;
+        return row.createdAt === cursorTime && row.id < input.cursor.id;
+      })
+      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
+      .slice(0, input.limit)
+      .map((row) => ({
+        id: row.id,
+        subject: row.subject,
+        predicate: row.predicate,
+        object: row.object,
+        content: row.content,
+        confidence: 1,
+        sourceDeleted: row.sourceDeleted,
+        createdByAgent: row.createdByAgent ?? null,
+        createdAt: new Date(row.createdAt),
+      }));
+  }
+
+  async listNamespaces(): Promise<NamespaceSummary[]> {
+    return Array.from(this.namespaces.values())
+      .map((namespace) => {
+        const namespaceFacts = Array.from(this.facts.values()).filter(
+          (row) => row.namespaceId === namespace.id && !row.sourceDeleted,
+        );
+        const activity = [
+          ...namespaceFacts.map((row) => row.createdAt),
+          ...Array.from(this.interactions.values())
+            .filter((row) => row.namespaceId === namespace.id)
+            .map((row) => row.createdAt),
+          ...Array.from(this.summaries.values())
+            .filter((row) => row.namespaceId === namespace.id)
+            .map((row) => row.createdAt),
+        ];
+        return {
+          name: namespace.name,
+          factCount: namespaceFacts.length,
+          lastActivity: activity.length ? new Date(Math.max(...activity)) : null,
+        };
+      })
+      .sort((a, b) => (b.lastActivity?.getTime() ?? 0) - (a.lastActivity?.getTime() ?? 0));
+  }
+
+  async getAgentWriteBreakdown(namespaceId?: string): Promise<AgentWriteBreakdown[]> {
+    const counts = new Map<string, { agentId: string | null; writes: number }>();
+    const add = (agentId: string | undefined, ns: string) => {
+      if (namespaceId && ns !== namespaceId) return;
+      const key = agentId ?? "__null__";
+      const current = counts.get(key) ?? { agentId: agentId ?? null, writes: 0 };
+      current.writes += 1;
+      counts.set(key, current);
+    };
+    for (const row of this.interactions.values()) add(row.createdByAgent, row.namespaceId);
+    for (const row of this.facts.values()) add(row.createdByAgent, row.namespaceId);
+    for (const row of this.summaries.values()) add(row.createdByAgent, row.namespaceId);
+    return Array.from(counts.values()).sort((a, b) => b.writes - a.writes);
+  }
+
+  async getStats(namespaceId?: string): Promise<MemoryStats> {
+    const embeddings = { pending: 0, failed: 0, ready: 0 };
+    const inScope = (ns: string) => !namespaceId || ns === namespaceId;
+    for (const row of this.embeddings.values()) {
+      if (!inScope(row.namespaceId)) continue;
+      if (row.status === "pending") embeddings.pending += 1;
+      if (row.status === "failed") embeddings.failed += 1;
+      if (row.status === "ready") embeddings.ready += 1;
+    }
+    const now = Date.now();
+    const calls = this.modelCalls.filter(
+      (entry) => !namespaceId || entry.namespaceId === namespaceId,
+    );
+    return {
+      namespaces: this.namespaces.size,
+      interactions: Array.from(this.interactions.values()).filter((row) => inScope(row.namespaceId))
+        .length,
+      facts: Array.from(this.facts.values()).filter((row) => inScope(row.namespaceId)).length,
+      summaries: Array.from(this.summaries.values()).filter((row) => inScope(row.namespaceId))
+        .length,
+      embeddings,
+      modelCalls: {
+        last60s: calls.filter((entry) => now - Number(entry.metadata.latencyMs ?? 0) <= 60_000)
+          .length,
+        lastHour: calls.length,
+        last24h: calls.length,
+        gatedFailures: calls.filter((entry) => entry.metadata.status === "gated").length,
+      },
+    };
+  }
+
+  async pruneBefore(
+    cutoff: Date,
+  ): Promise<{ interactions: number; facts: number; summaries: number }> {
+    const before = cutoff.getTime();
+    let interactionsDeleted = 0;
+    let factsDeleted = 0;
+    let summariesDeleted = 0;
+    for (const [id, row] of this.interactions) {
+      if (row.createdAt < before) {
+        this.interactions.delete(id);
+        interactionsDeleted += 1;
+      }
+    }
+    for (const [id, row] of this.facts) {
+      if (row.createdAt < before) {
+        this.facts.delete(id);
+        factsDeleted += 1;
+      }
+    }
+    for (const [id, row] of this.summaries) {
+      if (row.createdAt < before) {
+        this.summaries.delete(id);
+        summariesDeleted += 1;
+      }
+    }
+    return { interactions: interactionsDeleted, facts: factsDeleted, summaries: summariesDeleted };
+  }
+
+  async getVectorIndexHealth(namespaceId?: string): Promise<VectorIndexHealth> {
+    const vectorCount = Array.from(this.embeddings.values()).filter(
+      (row) => !namespaceId || row.namespaceId === namespaceId,
+    ).length;
+    return {
+      vectorCount,
+      indexName: "in_memory",
+      indexDefinition: null,
+      needsTuning: vectorCount >= 100_000,
+    };
   }
 
   private insertPendingEmbedding(input: PendingEmbeddingInsert, content: string): void {

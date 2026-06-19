@@ -1,5 +1,20 @@
 export type { CodeBuddyDependencies } from "./core/codebuddy.js";
 export { CodeBuddy } from "./core/codebuddy.js";
+export {
+  checkConfigPermissions,
+  configPath,
+  initConfigFile,
+  loadRuntimeConfig,
+  redactSecrets,
+} from "./core/config-file.js";
+export {
+  createRuntime,
+  decodeFactCursor,
+  encodeFactCursor,
+  inspectNamespace,
+  listFactsPage,
+  runDoctor,
+} from "./core/operations.js";
 export type { MemoryRepository } from "./core/repository.js";
 export type {
   CodeBuddyConfig,
@@ -18,6 +33,8 @@ export type {
 export type { WorkerState } from "./core/worker.js";
 export { EmbeddingWorker } from "./core/worker.js";
 export { createPostgresRepository } from "./db/repository.js";
+export { startMcpServer } from "./mcp/server.js";
+export { mcpToolInputSchemas, registerCodeBuddyTools } from "./mcp/tools/index.js";
 export type {
   BudgetClampResult,
   ConflictMode,
