@@ -1,6 +1,10 @@
+import { clampBudgetForCallerModel } from "../planner/budget.js";
+import { DefaultPolicy } from "../planner/default-policy.js";
+import type { ContextPolicy, PlanInput } from "../planner/types.js";
 import type { ModelProvider } from "../providers/adapter.js";
 import { HuggingFaceProvider } from "../providers/huggingface.js";
 import { DEFAULT_EMBEDDING_MODELS } from "../providers/models.js";
+import { createTracer, type Tracer } from "../tracing/langsmith.js";
 import { type ValidatedCodeBuddyConfig, validateConfig } from "./config.js";
 import {
   computeContentHash,
@@ -38,6 +42,8 @@ export type CodeBuddyDependencies = {
   repository: MemoryRepository;
   provider?: ModelProvider;
   worker?: EmbeddingWorker;
+  policy?: ContextPolicy;
+  tracer?: Tracer;
 };
 
 export class CodeBuddy {
@@ -45,6 +51,8 @@ export class CodeBuddy {
   private readonly repo: MemoryRepository;
   private readonly provider: ModelProvider;
   private readonly worker: EmbeddingWorker;
+  private readonly policy: ContextPolicy;
+  private readonly tracer: Tracer;
   private namespaceId: string | null = null;
   private initialized = false;
 
@@ -76,6 +84,8 @@ export class CodeBuddy {
           ? { maxAttempts: this.config.worker.maxAttempts }
           : {}),
       });
+    this.policy = deps.policy ?? new DefaultPolicy();
+    this.tracer = deps.tracer ?? createTracer();
   }
 
   async init(): Promise<CodeBuddyStatus> {
@@ -134,9 +144,56 @@ export class CodeBuddy {
     return results;
   }
 
-  async recall(_input: RecallInput): Promise<RecallResult> {
-    this.requireNamespaceId();
-    throw new Error("CodeBuddy.recall is implemented in Phase 5 (planner + budget packing).");
+  async recall(input: RecallInput): Promise<RecallResult> {
+    const namespaceId = this.requireNamespaceId();
+    if (!input.query || input.query.length === 0) {
+      throw new Error("recall: query must not be empty.");
+    }
+    const requested = input.budget ?? this.config.tokenBudget ?? 4_000;
+    const clamp = clampBudgetForCallerModel(requested, input.callerModel);
+    const queryEmbedding = await this.embedQueryWithFallback(input.query);
+    const planInput: PlanInput = {
+      namespace: this.config.namespace,
+      namespaceId,
+      sessionId: input.sessionId,
+      query: input.query,
+      budget: clamp.budget,
+      conflictMode: input.conflictMode ?? "all",
+      queryEmbedding,
+      repository: this.repo,
+      ...(input.callerModel !== undefined ? { callerModel: input.callerModel } : {}),
+    };
+
+    const planned = await this.tracer.withSpan(
+      "codebuddy.recall",
+      {
+        namespace: this.config.namespace,
+        sessionId: input.sessionId,
+        budget: clamp.budget,
+        conflictMode: planInput.conflictMode,
+        callerModel: input.callerModel ?? null,
+      },
+      () => this.policy.plan(planInput),
+    );
+
+    planned.stats.budgetClamped = clamp.clamped;
+    if (clamp.clamped && clamp.reason) {
+      planned.stats.budgetClampReason = clamp.reason;
+    }
+    return planned;
+  }
+
+  private async embedQueryWithFallback(query: string): Promise<number[] | null> {
+    try {
+      const response = await this.tracer.withSpan(
+        "codebuddy.recall.embed_query",
+        { length: query.length },
+        () => this.provider.embed({ input: query }),
+      );
+      return response.vectors[0] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async share(input: ShareInput): Promise<ShareResult> {

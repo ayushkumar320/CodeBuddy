@@ -293,10 +293,83 @@ describe("forget", () => {
   });
 });
 
-describe("recall placeholder", () => {
-  it("throws until Phase 5 is implemented", async () => {
+describe("recall", () => {
+  it("rejects empty queries", async () => {
     const { sdk } = await buildSdk();
-    await expect(sdk.recall({ sessionId: "s", query: "anything" })).rejects.toThrow(/Phase 5/);
+    await expect(sdk.recall({ sessionId: "s", query: "" })).rejects.toThrow();
+    await sdk.shutdown();
+  });
+
+  it("returns planned context once embeddings are ready", async () => {
+    const { sdk } = await buildSdk();
+    await sdk.remember({ sessionId: "s1", content: "Deployment target is eu-west-1." });
+    await sdk.remember({ sessionId: "s1", content: "Use layer caching." });
+    await sdk.getWorker().drain();
+    const planned = await sdk.recall({ sessionId: "s1", query: "deployment region" });
+    expect(planned.system).toMatch(/research-agent/);
+    expect(planned.messages.length).toBeGreaterThan(0);
+    expect(planned.stats.tokensUsed).toBeGreaterThan(0);
+    expect(planned.stats.itemsIncluded).toBeGreaterThan(0);
+    expect(planned.stats.embeddingCoverage.ready).toBeGreaterThan(0);
+    expect(planned.stats.fallback).toBe("none");
+    await sdk.shutdown();
+  });
+
+  it("falls back to recency when embeddings are still pending", async () => {
+    const repository = new InMemoryMemoryRepository();
+    // worker poll interval is far in the future so embeddings stay pending
+    const slowWorkerConfig: CodeBuddyConfig = {
+      ...baseConfig,
+      worker: { pollIntervalMs: 60_000, batchSize: 4, maxAttempts: 3 },
+    };
+    const sdk = new CodeBuddy(slowWorkerConfig, {
+      repository,
+      provider: mockProvider(),
+    });
+    await sdk.init();
+    await sdk.getWorker().stop();
+    await sdk.remember({ sessionId: "s2", content: "Pending interaction one." });
+    await sdk.remember({ sessionId: "s2", content: "Pending interaction two." });
+    const planned = await sdk.recall({ sessionId: "s2", query: "what's pending?" });
+    expect(planned.stats.fallback).not.toBe("none");
+    expect(planned.stats.embeddingCoverage.ready).toBe(0);
+    expect(planned.stats.embeddingCoverage.pending).toBeGreaterThan(0);
+    expect(planned.messages.length).toBeGreaterThan(0);
+    await sdk.shutdown();
+  });
+
+  it("clamps budget when caller model context window is too small", async () => {
+    const { sdk } = await buildSdk();
+    await sdk.remember({ sessionId: "s3", content: "anything" });
+    await sdk.getWorker().drain();
+    const planned = await sdk.recall({
+      sessionId: "s3",
+      query: "anything",
+      budget: 999_999,
+      callerModel: "Qwen/Qwen2.5-7B-Instruct",
+    });
+    expect(planned.stats.budgetClamped).toBe(true);
+    expect(planned.stats.budgetClampReason).toContain("clamped");
+    await sdk.shutdown();
+  });
+
+  it("respects a small budget by skipping items", async () => {
+    const { sdk } = await buildSdk();
+    for (let i = 0; i < 5; i++) {
+      await sdk.remember({
+        sessionId: "s4",
+        content: `Long-ish content item number ${i} talking about kubernetes deployments and caching.`,
+      });
+    }
+    await sdk.getWorker().drain();
+    const planned = await sdk.recall({
+      sessionId: "s4",
+      query: "kubernetes",
+      budget: 20,
+    });
+    expect(planned.stats.tokensUsed).toBeLessThanOrEqual(20);
+    expect(planned.stats.itemsSkipped).toBeGreaterThan(0);
+    expect(planned.stats.skipReasons.budget_exhausted ?? 0).toBeGreaterThan(0);
     await sdk.shutdown();
   });
 });

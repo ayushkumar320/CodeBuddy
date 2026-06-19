@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { generateEntityId } from "../core/ids.js";
 import type {
   AuditEntry,
@@ -10,7 +10,12 @@ import type {
   MemoryRepository,
   ModelCallEntry,
   NamespaceRow,
+  PendingEmbeddingCounts,
   PendingEmbeddingInsert,
+  ReadyEmbedding,
+  RecentFact,
+  RecentInteraction,
+  RecentSummary,
   ShareWriteInput,
   SummaryInsert,
   WriteResult,
@@ -411,6 +416,164 @@ export class PostgresMemoryRepository implements MemoryRepository {
   async recordAudit(entry: AuditEntry): Promise<void> {
     await this.db.insert(auditLog).values(toAuditRow(entry));
   }
+
+  async getReadyEmbeddings(namespaceId: string, limit: number): Promise<ReadyEmbedding[]> {
+    const rows = await this.client.sql<
+      {
+        id: string;
+        owner_type: "interaction" | "fact" | "summary";
+        owner_id: string;
+        embedding_model: string;
+        vector: string;
+      }[]
+    >`
+      select id, owner_type, owner_id, embedding_model, vector::text as vector
+      from embeddings
+      where namespace_id = ${namespaceId} and status = 'ready'
+      order by updated_at desc
+      limit ${limit}
+    `;
+    return rows.map((row) => ({
+      embeddingId: row.id,
+      ownerType: row.owner_type,
+      ownerId: row.owner_id,
+      embeddingModel: row.embedding_model,
+      vector: parseVectorLiteral(row.vector),
+    }));
+  }
+
+  async getRecentInteractions(
+    namespaceId: string,
+    sessionId: string,
+    limit: number,
+  ): Promise<RecentInteraction[]> {
+    const rows = await this.db
+      .select({
+        id: interactions.id,
+        sessionId: interactions.sessionId,
+        content: interactions.content,
+        tokenCount: interactions.tokenCount,
+        createdAt: interactions.createdAt,
+      })
+      .from(interactions)
+      .where(and(eq(interactions.namespaceId, namespaceId), eq(interactions.sessionId, sessionId)))
+      .orderBy(desc(interactions.createdAt))
+      .limit(limit);
+    return rows.map((row) => ({ ...row, createdAt: row.createdAt }));
+  }
+
+  async getRecentFacts(namespaceId: string, limit: number): Promise<RecentFact[]> {
+    const rows = await this.db
+      .select({
+        id: facts.id,
+        content: facts.content,
+        confidence: facts.confidence,
+        sourceDeleted: facts.sourceDeleted,
+        createdAt: facts.createdAt,
+      })
+      .from(facts)
+      .where(and(eq(facts.namespaceId, namespaceId), eq(facts.sourceDeleted, false)))
+      .orderBy(desc(facts.createdAt))
+      .limit(limit);
+    return rows.map((row) => ({
+      id: row.id,
+      content: row.content,
+      confidence: Number(row.confidence ?? 1),
+      sourceDeleted: row.sourceDeleted,
+      createdAt: row.createdAt,
+    }));
+  }
+
+  async getLatestSummary(namespaceId: string, sessionId: string): Promise<RecentSummary | null> {
+    const rows = await this.db
+      .select({
+        id: sessionSummaries.id,
+        sessionId: sessionSummaries.sessionId,
+        content: sessionSummaries.content,
+        tokenCount: sessionSummaries.tokenCount,
+        createdAt: sessionSummaries.createdAt,
+      })
+      .from(sessionSummaries)
+      .where(
+        and(
+          eq(sessionSummaries.namespaceId, namespaceId),
+          eq(sessionSummaries.sessionId, sessionId),
+        ),
+      )
+      .orderBy(desc(sessionSummaries.version))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async getInteractionsByIds(namespaceId: string, ids: string[]): Promise<RecentInteraction[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .select({
+        id: interactions.id,
+        sessionId: interactions.sessionId,
+        content: interactions.content,
+        tokenCount: interactions.tokenCount,
+        createdAt: interactions.createdAt,
+      })
+      .from(interactions)
+      .where(and(eq(interactions.namespaceId, namespaceId), inArray(interactions.id, ids)));
+    return rows;
+  }
+
+  async getFactsByIds(namespaceId: string, ids: string[]): Promise<RecentFact[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .select({
+        id: facts.id,
+        content: facts.content,
+        confidence: facts.confidence,
+        sourceDeleted: facts.sourceDeleted,
+        createdAt: facts.createdAt,
+      })
+      .from(facts)
+      .where(and(eq(facts.namespaceId, namespaceId), inArray(facts.id, ids)));
+    return rows.map((row) => ({
+      id: row.id,
+      content: row.content,
+      confidence: Number(row.confidence ?? 1),
+      sourceDeleted: row.sourceDeleted,
+      createdAt: row.createdAt,
+    }));
+  }
+
+  async getSummariesByIds(namespaceId: string, ids: string[]): Promise<RecentSummary[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .select({
+        id: sessionSummaries.id,
+        sessionId: sessionSummaries.sessionId,
+        content: sessionSummaries.content,
+        tokenCount: sessionSummaries.tokenCount,
+        createdAt: sessionSummaries.createdAt,
+      })
+      .from(sessionSummaries)
+      .where(and(eq(sessionSummaries.namespaceId, namespaceId), inArray(sessionSummaries.id, ids)));
+    return rows;
+  }
+
+  async countEmbeddingStatuses(namespaceId: string): Promise<PendingEmbeddingCounts> {
+    const rows = await this.client.sql<{ status: string; count: string }[]>`
+      select status::text as status, count(*)::text as count
+      from embeddings
+      where namespace_id = ${namespaceId}
+      group by status
+    `;
+    let pending = 0;
+    let failed = 0;
+    let ready = 0;
+    for (const row of rows) {
+      const value = Number(row.count);
+      if (row.status === "pending") pending = value;
+      else if (row.status === "failed") failed = value;
+      else if (row.status === "ready") ready = value;
+    }
+    return { pending, failed, ready };
+  }
 }
 
 export function createPostgresRepository(client: DatabaseClient): MemoryRepository {
@@ -431,6 +594,12 @@ function toAuditRow(entry: AuditEntry) {
 
 function zeroVectorLiteral(): string {
   return `[${Array.from({ length: 384 }, () => 0).join(",")}]`;
+}
+
+function parseVectorLiteral(literal: string): number[] {
+  const trimmed = literal.startsWith("[") ? literal.slice(1, -1) : literal;
+  if (!trimmed) return [];
+  return trimmed.split(",").map((value) => Number(value));
 }
 
 function advisoryLockKeys(namespaceId: string, sessionId: string): [number, number] {

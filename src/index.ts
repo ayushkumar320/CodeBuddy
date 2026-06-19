@@ -19,7 +19,16 @@ export type { WorkerState } from "./core/worker.js";
 export { EmbeddingWorker } from "./core/worker.js";
 export { createPostgresRepository } from "./db/repository.js";
 export type {
+  BudgetClampResult,
+  ConflictMode,
   ContextPolicy,
+  DefaultPolicyOptions,
+  PlanInput,
   PlannedContext,
+  PlannedMessage,
   PlannerStats,
-} from "./planner/types.js";
+  SkipReason,
+} from "./planner/index.js";
+export { clampBudgetForCallerModel, countTokens, DefaultPolicy } from "./planner/index.js";
+export type { Tracer, TraceSpan } from "./tracing/langsmith.js";
+export { createTracer, isLangSmithTracingEnabled } from "./tracing/langsmith.js";

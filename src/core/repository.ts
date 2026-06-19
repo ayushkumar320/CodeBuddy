@@ -95,6 +95,44 @@ export type EmbeddingStatusSnapshot = {
   lastError: string | null;
 };
 
+export type ReadyEmbedding = {
+  embeddingId: string;
+  ownerType: MemoryWriteType;
+  ownerId: string;
+  vector: number[];
+  embeddingModel: string;
+};
+
+export type RecentInteraction = {
+  id: string;
+  sessionId: string;
+  content: string;
+  tokenCount: number;
+  createdAt: Date;
+};
+
+export type RecentFact = {
+  id: string;
+  content: string;
+  confidence: number;
+  sourceDeleted: boolean;
+  createdAt: Date;
+};
+
+export type RecentSummary = {
+  id: string;
+  sessionId: string;
+  content: string;
+  tokenCount: number;
+  createdAt: Date;
+};
+
+export type PendingEmbeddingCounts = {
+  pending: number;
+  failed: number;
+  ready: number;
+};
+
 export type MemoryRepository = {
   ensureNamespace(name: string): Promise<NamespaceRow>;
   getNamespaceByName(name: string): Promise<NamespaceRow | null>;
@@ -136,4 +174,17 @@ export type MemoryRepository = {
 
   recordModelCall(entry: ModelCallEntry): Promise<void>;
   recordAudit(entry: AuditEntry): Promise<void>;
+
+  getReadyEmbeddings(namespaceId: string, limit: number): Promise<ReadyEmbedding[]>;
+  getRecentInteractions(
+    namespaceId: string,
+    sessionId: string,
+    limit: number,
+  ): Promise<RecentInteraction[]>;
+  getRecentFacts(namespaceId: string, limit: number): Promise<RecentFact[]>;
+  getLatestSummary(namespaceId: string, sessionId: string): Promise<RecentSummary | null>;
+  getInteractionsByIds(namespaceId: string, ids: string[]): Promise<RecentInteraction[]>;
+  getFactsByIds(namespaceId: string, ids: string[]): Promise<RecentFact[]>;
+  getSummariesByIds(namespaceId: string, ids: string[]): Promise<RecentSummary[]>;
+  countEmbeddingStatuses(namespaceId: string): Promise<PendingEmbeddingCounts>;
 };

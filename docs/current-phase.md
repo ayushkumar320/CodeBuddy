@@ -2,43 +2,39 @@
 
 ## Status
 
-Current phase: `Phase 5 - Planner And Tracing`
+Current phase: `Phase 6 - MCP, LangGraph, CLI`
 
 Project state:
 
-- Phase 1 foundation scaffold is complete
-- Phase 2 storage and schema scaffold is complete
-- Phase 3 Hugging Face resilience layer is complete
-- Phase 4 core memory pipeline is complete
-- `CodeBuddy` SDK validates config with Zod and resolves namespaces on `init`
-- `remember` and `rememberBatch` are idempotent via content hash or `idempotencyKey`
-- Session ids auto-generate as `sess_<ulid>` when omitted
-- `MemoryRepository` abstraction backs both an in-memory test fake and a Drizzle-backed Postgres implementation
-- In-process embedding worker supports start/notify/drain/stop/shutdown and persists `model_calls`
-- `share` writes reference and snapshot rows + `audit_log`
-- `forget` hard-deletes the interaction/fact, drops the embedding, tombstones reference shares, and marks dependent facts `source_deleted`
-- typecheck, lint, build, and tests pass (28 tests across resilience, HF, and core)
+- Phases 1–5 are complete
+- `recall({ sessionId, query, budget?, callerModel?, conflictMode? })` orchestrates a planner pipeline that returns `{ system, messages, stats }`
+- `DefaultPolicy` ranks ready embeddings by cosine similarity, applies a recency floor, supports `all`/`latest`/`highest_confidence` conflict modes, and packs into a token budget
+- Token counting uses `js-tiktoken` (cl100k base) with a length-based fallback
+- Caller-model budget clamp validates against `getModelContextWindow` and reports `budgetClamped` + `budgetClampReason`
+- Embedding-coverage stats (`ready`, `pending`, `failed`) and `skipReasons` are surfaced on every recall
+- Pending-embedding fallback returns recency + latest summary without blocking on the worker
+- LangSmith tracing wrappers (`createTracer`) auto-enable on `LANGCHAIN_TRACING_V2=true` and wrap planner + provider spans
+- typecheck, lint, build, and tests pass (36 tests; planner + recall covered)
 
 ## What to build next
 
-Build the recall planner and tracing.
+Build the user-facing surfaces.
 
 Next concrete tasks:
 
-1. Implement `recall({ sessionId, query, budget?, callerModel?, conflictMode? })`.
-2. Implement the default context policy with recency floor + vector similarity ranking.
-3. Add budget packing keyed on `js-tiktoken` token counts.
-4. Validate `budget` against the model context-window registry, warn, and clamp.
-5. Implement fallback to recency + summaries when embeddings are pending or failed.
-6. Wire LangSmith tracing around provider calls, planner decisions, and tool invocations.
-7. Return `{ system, messages, stats }` with full stats fields.
+1. Implement MCP stdio server tools: `remember`, `remember_batch`, `recall`, `list_facts`, `list_namespaces`, `forget`, `share`.
+2. Implement `list_facts` pagination with an opaque base64 cursor.
+3. Implement `CodeBuddyNode` and `CodeBuddyCheckpointer` for LangGraph (with 30s recall cache).
+4. Implement CLI commands: `init`, `serve`, `inspect`, `namespaces`, `prune`, `export`, `stats`, `doctor`.
+5. Enforce `0600` permissions on `.codebuddy/config.json`; prefer `HF_TOKEN` over file tokens.
+6. Wire structured logging via `pino` (JSON to stderr for MCP, `pino-pretty` for TTY CLI).
+7. Add graceful shutdown to `serve` that drains the embedding worker.
 
 ## What not to build yet
 
 - Docker
-- MCP tools
-- LangGraph integration
-- CLI command behavior beyond placeholders
+- examples beyond what already exists
+- HTTP transport (deferred to v0.2)
 
 ## Ready-to-use execution prompt
 

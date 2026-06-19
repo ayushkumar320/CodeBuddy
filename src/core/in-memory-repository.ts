@@ -8,7 +8,12 @@ import type {
   MemoryRepository,
   ModelCallEntry,
   NamespaceRow,
+  PendingEmbeddingCounts,
   PendingEmbeddingInsert,
+  ReadyEmbedding,
+  RecentFact,
+  RecentInteraction,
+  RecentSummary,
   ShareWriteInput,
   SummaryInsert,
   WriteResult,
@@ -284,6 +289,122 @@ export class InMemoryMemoryRepository implements MemoryRepository {
 
   async recordAudit(entry: AuditEntry): Promise<void> {
     this.auditLog.push(entry);
+  }
+
+  async getReadyEmbeddings(namespaceId: string, limit: number): Promise<ReadyEmbedding[]> {
+    const ready: ReadyEmbedding[] = [];
+    for (const row of this.embeddings.values()) {
+      if (row.namespaceId !== namespaceId) continue;
+      if (row.status !== "ready" || !row.vector) continue;
+      ready.push({
+        embeddingId: row.id,
+        ownerType: row.ownerType,
+        ownerId: row.ownerId,
+        vector: row.vector,
+        embeddingModel: row.embeddingModel,
+      });
+      if (ready.length >= limit) break;
+    }
+    return ready;
+  }
+
+  async getRecentInteractions(
+    namespaceId: string,
+    sessionId: string,
+    limit: number,
+  ): Promise<RecentInteraction[]> {
+    const rows = Array.from(this.interactions.values())
+      .filter((row) => row.namespaceId === namespaceId && row.sessionId === sessionId)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.sessionId,
+      content: row.content,
+      tokenCount: row.tokenCount,
+      createdAt: new Date(row.createdAt),
+    }));
+  }
+
+  async getRecentFacts(namespaceId: string, limit: number): Promise<RecentFact[]> {
+    const rows = Array.from(this.facts.values())
+      .filter((row) => row.namespaceId === namespaceId && !row.sourceDeleted)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
+    return rows.map((row) => ({
+      id: row.id,
+      content: row.content,
+      confidence: 1,
+      sourceDeleted: row.sourceDeleted,
+      createdAt: new Date(row.createdAt),
+    }));
+  }
+
+  async getLatestSummary(namespaceId: string, sessionId: string): Promise<RecentSummary | null> {
+    const rows = Array.from(this.summaries.values())
+      .filter((row) => row.namespaceId === namespaceId && row.sessionId === sessionId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      sessionId: row.sessionId,
+      content: row.content,
+      tokenCount: row.tokenCount,
+      createdAt: new Date(row.createdAt),
+    };
+  }
+
+  async getInteractionsByIds(namespaceId: string, ids: string[]): Promise<RecentInteraction[]> {
+    const set = new Set(ids);
+    return Array.from(this.interactions.values())
+      .filter((row) => row.namespaceId === namespaceId && set.has(row.id))
+      .map((row) => ({
+        id: row.id,
+        sessionId: row.sessionId,
+        content: row.content,
+        tokenCount: row.tokenCount,
+        createdAt: new Date(row.createdAt),
+      }));
+  }
+
+  async getFactsByIds(namespaceId: string, ids: string[]): Promise<RecentFact[]> {
+    const set = new Set(ids);
+    return Array.from(this.facts.values())
+      .filter((row) => row.namespaceId === namespaceId && set.has(row.id))
+      .map((row) => ({
+        id: row.id,
+        content: row.content,
+        confidence: 1,
+        sourceDeleted: row.sourceDeleted,
+        createdAt: new Date(row.createdAt),
+      }));
+  }
+
+  async getSummariesByIds(namespaceId: string, ids: string[]): Promise<RecentSummary[]> {
+    const set = new Set(ids);
+    return Array.from(this.summaries.values())
+      .filter((row) => row.namespaceId === namespaceId && set.has(row.id))
+      .map((row) => ({
+        id: row.id,
+        sessionId: row.sessionId,
+        content: row.content,
+        tokenCount: row.tokenCount,
+        createdAt: new Date(row.createdAt),
+      }));
+  }
+
+  async countEmbeddingStatuses(namespaceId: string): Promise<PendingEmbeddingCounts> {
+    let pending = 0;
+    let failed = 0;
+    let ready = 0;
+    for (const row of this.embeddings.values()) {
+      if (row.namespaceId !== namespaceId) continue;
+      if (row.status === "pending") pending += 1;
+      else if (row.status === "failed") failed += 1;
+      else if (row.status === "ready") ready += 1;
+    }
+    return { pending, failed, ready };
   }
 
   private insertPendingEmbedding(input: PendingEmbeddingInsert, content: string): void {
