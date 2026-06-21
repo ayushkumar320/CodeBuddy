@@ -40,13 +40,37 @@ export async function writeClaudeConfig(path: string, config: ClaudeDesktopConfi
 }
 
 /**
- * Resolve the absolute path to this codebuddy install's CLI entrypoint —
- * works for both `node dist/cli/index.js` (built) and installed npm packages.
+ * Resolve the absolute path to this codebuddy install's CLI entrypoint.
+ *
+ * Has to cope with three layouts:
+ *   - dev:           `tsx src/cli/index.ts`           — argv[1] is the .ts file
+ *   - built locally: `node dist/cli/index.js serve`   — argv[1] is dist/cli/index.js
+ *   - npm bin:       `/usr/local/bin/codebuddy ...`   — argv[1] is the resolved bin
+ *
+ * `process.argv[1]` is the file Node was invoked with, which IS the CLI entry
+ * in every supported case. We use it as the source of truth. import.meta.url
+ * is unreliable here because tsup bundles src/cli/* into a single dist file,
+ * so the source-relative path math (`..`) lands on the SDK barrel
+ * (dist/index.js) instead of the CLI (dist/cli/index.js).
  */
 export function resolveCliEntrypoint(): string {
+  const fromArgv = process.argv[1];
+  if (fromArgv && existsSync(fromArgv)) return fromArgv;
+
+  // Fallback for the unlikely case where argv[1] is missing (eval'd, embedded
+  // host, etc): walk the source layout.
   const here = dirname(fileURLToPath(import.meta.url));
-  // commands/<this file>.js  →  ..  →  cli/  →  index.js
-  return resolve(here, "..", "index.js");
+  const candidates = [
+    resolve(here, "index.js"), // bundled: here = dist/cli/
+    resolve(here, "..", "cli", "index.js"), // source: here = src/cli/commands/
+    resolve(here, "..", "index.js"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  // Last resort — return argv[1] even if it doesn't exist, so the error
+  // surfaces with the real path the caller saw rather than a stale guess.
+  return fromArgv ?? candidates[0] ?? "";
 }
 
 export type InstallEntryOptions = {

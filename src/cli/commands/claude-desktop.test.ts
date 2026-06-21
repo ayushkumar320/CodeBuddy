@@ -49,6 +49,19 @@ describe("buildEntry", () => {
     const entry = buildEntry({ namespace: "demo" });
     expect(entry.env).toEqual({ CODEBUDDY_NAMESPACE: "demo" });
   });
+
+  it("uses process.argv[1] as the CLI entrypoint (not the SDK barrel)", () => {
+    const entry = buildEntry({ namespace: "demo" });
+    // Regression test for the bug where tsup bundling collapsed src/cli/
+    // into dist/cli/index.js and the old `resolve(here, "..", "index.js")`
+    // pointed at dist/index.js (SDK), causing Claude Desktop to launch
+    // the wrong file and silently exit.
+    const entrypoint = entry.args[0];
+    expect(entrypoint).toBe(process.argv[1]);
+    // The SDK barrel does not contain `serve` — make sure we never point at it.
+    expect(entrypoint).not.toMatch(/\/dist\/index\.js$/);
+    expect(entrypoint).not.toMatch(/\/dist\/index\.mjs$/);
+  });
 });
 
 describe("install / list / remove", () => {
