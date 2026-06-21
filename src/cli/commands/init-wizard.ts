@@ -59,8 +59,7 @@ export async function runInitWizard(): Promise<WizardResult> {
         message: "Postgres URL",
         initialValue:
           process.env.DATABASE_URL ?? "postgres://codebuddy:codebuddy@localhost:5432/codebuddy",
-        validate: (value) =>
-          value && value.length > 0 ? undefined : "Postgres URL is required.",
+        validate: (value) => (value && value.length > 0 ? undefined : "Postgres URL is required."),
       }),
     );
 
@@ -70,9 +69,7 @@ export async function runInitWizard(): Promise<WizardResult> {
         message: "Default namespace",
         initialValue: process.env.CODEBUDDY_NAMESPACE ?? "default",
         validate: (value) =>
-          value && /^[a-zA-Z0-9_.:-]+$/.test(value)
-            ? undefined
-            : "Letters, digits, _ . : - only.",
+          value && /^[a-zA-Z0-9_.:-]+$/.test(value) ? undefined : "Letters, digits, _ . : - only.",
       }),
     );
 

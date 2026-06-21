@@ -24,27 +24,48 @@ Optional peer dependency:
 
 ## Quick Start
 
-Start local Postgres with pgvector:
+Install once globally, then let the interactive wizard wire everything:
 
 ```bash
-docker compose up -d
-export DATABASE_URL=postgres://codebuddy:codebuddy@localhost:5432/codebuddy
-export HF_TOKEN=hf_your_token
+npm install -g codebuddy
+codebuddy init
 ```
 
-Build and initialize:
+`codebuddy init` prompts for your Hugging Face token, validates your Postgres URL, offers to start the bundled `pgvector/pgvector:pg16` container if Postgres isn't reachable, applies migrations, and optionally registers itself with Claude Desktop.
+
+To wire any additional project into Claude Desktop with its own namespace:
 
 ```bash
-npm install
-npm run build
-node dist/cli/index.js init
-node dist/cli/index.js doctor --skip-model-check
+cd ~/Projects/your-project
+codebuddy claude install --namespace your-project
 ```
 
-Run the MCP server:
+Then restart Claude Desktop (⌘Q + reopen) and the new namespace's tools are live.
+
+### Manual setup (if you prefer)
 
 ```bash
-node dist/cli/index.js serve
+# 1. Start Postgres (pgvector image bundled)
+codebuddy postgres up
+
+# 2. Apply migrations
+codebuddy migrate
+
+# 3. Run the MCP stdio server
+codebuddy serve
+```
+
+### Useful commands
+
+```bash
+codebuddy doctor              # DB, pgvector, vector index, HF model health
+codebuddy claude list         # see all codebuddy entries in Claude Desktop
+codebuddy claude remove <key> # detach a namespace from Claude Desktop
+codebuddy postgres down       # stop the bundled DB (volume preserved)
+codebuddy stats               # storage + usage stats
+codebuddy inspect <namespace> # contents + per-agent breakdown
+codebuddy list-facts          # paginate facts
+codebuddy prune --older-than 30d
 ```
 
 ## Configuration

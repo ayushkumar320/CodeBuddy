@@ -1,6 +1,6 @@
 {
   "name": "codebuddy",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "MCP memory server for multi-agent systems, powered by Postgres, pgvector, and Hugging Face.",
   "type": "module",
   "license": "MIT",
@@ -47,7 +47,23 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "memory",
+    "agent",
+    "multi-agent",
+    "huggingface",
+    "pgvector",
+    "postgres",
+    "langgraph",
+    "claude"
+  ],
+  "homepage": "https://github.com/iprashantraj/codebuddy#readme",
+  "bugs": {
+    "url": "https://github.com/iprashantraj/codebuddy/issues"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",

@@ -1,11 +1,10 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import {
-  resolveBundledComposeFile,
-  runDockerCompose,
-} from "./postgres-docker.js";
+import { resolveBundledComposeFile, runDockerCompose } from "./postgres-docker.js";
 
-function fakeChild(opts: { code?: number; stdout?: string; stderr?: string; emitError?: NodeJS.ErrnoException } = {}) {
+function fakeChild(
+  opts: { code?: number; stdout?: string; stderr?: string; emitError?: NodeJS.ErrnoException } = {},
+) {
   const child = new EventEmitter() as EventEmitter & {
     stdout: EventEmitter;
     stderr: EventEmitter;
@@ -89,9 +88,7 @@ describe("runDockerCompose", () => {
   });
 
   it("returns non-zero exit codes from docker compose", async () => {
-    const spawnImpl = vi.fn(() =>
-      fakeChild({ code: 1, stderr: "service postgres failed\n" }),
-    );
+    const spawnImpl = vi.fn(() => fakeChild({ code: 1, stderr: "service postgres failed\n" }));
     const result = await runDockerCompose(["up", "-d"], {
       spawnImpl: spawnImpl as unknown as typeof import("node:child_process").spawn,
     });

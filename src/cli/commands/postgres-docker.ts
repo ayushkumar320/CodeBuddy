@@ -70,10 +70,7 @@ export async function runDockerCompose(
   );
 }
 
-function spawnOnce(
-  spawnImpl: typeof spawn,
-  attempt: ComposeCommand,
-): Promise<DockerComposeResult> {
+function spawnOnce(spawnImpl: typeof spawn, attempt: ComposeCommand): Promise<DockerComposeResult> {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawnImpl(attempt.bin, attempt.args, {
       stdio: ["ignore", "pipe", "pipe"],
