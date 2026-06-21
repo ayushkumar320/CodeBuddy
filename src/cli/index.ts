@@ -14,6 +14,7 @@ import {
 } from "./commands/claude-desktop.js";
 import { runInitWizard } from "./commands/init-wizard.js";
 import { postgresDown, postgresStatus, postgresUp } from "./commands/postgres-docker.js";
+import { runUseCommand } from "./commands/use-command.js";
 
 export function createCli(): Command {
   const program = new Command();
@@ -22,6 +23,29 @@ export function createCli(): Command {
     .name("codebuddy")
     .description("MCP memory server for multi-agent systems.")
     .version("0.0.0");
+
+  program
+    .command("use")
+    .description(
+      "One-command setup for the current project folder. Reuses saved HF token + DB URL, auto-starts Docker, runs migrations, and wires Claude Desktop.",
+    )
+    .argument("[namespace]", "Override the namespace (defaults to current folder name).")
+    .option("--postgres-url <url>", "Postgres URL to use for this project.")
+    .option("--skip-claude", "Do not register with Claude Desktop.")
+    .action(
+      async (
+        namespace: string | undefined,
+        opts: { postgresUrl?: string; skipClaude?: boolean },
+      ) => {
+        await runSafely(async () => {
+          await runUseCommand({
+            ...(namespace !== undefined ? { namespace } : {}),
+            ...(opts.postgresUrl !== undefined ? { postgresUrl: opts.postgresUrl } : {}),
+            ...(opts.skipClaude !== undefined ? { skipClaude: opts.skipClaude } : {}),
+          });
+        });
+      },
+    );
 
   program
     .command("init")
