@@ -218,6 +218,8 @@ codebuddy doctor
 - `examples/langgraph-agent`: LangGraph recall/agent/remember loop
 - `examples/multi-agent-handoff`: reference and snapshot sharing across namespaces
 
+For detailed Claude Code and Codex setup with Docker commands, see `CLAUDE_CODEX.md`.
+
 ## Hugging Face Free-Tier Notes
 
 Hugging Face-hosted models may be cold, gated, rate-limited, or temporarily unavailable. CodeBuddy handles cold starts, retries, queueing, fallback models, and timeout reporting, but free-tier limits still matter.
