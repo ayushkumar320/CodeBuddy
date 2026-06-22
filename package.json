@@ -1,5 +1,5 @@
 {
-  "name": "@your-npm-username/codebuddy",
+  "name": "@ayushkumar320/codebuddy",
   "version": "0.1.0",
   "description": "MCP memory server for multi-agent systems, powered by Postgres, pgvector, and Hugging Face.",
   "type": "module",
