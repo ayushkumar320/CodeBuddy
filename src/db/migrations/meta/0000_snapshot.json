@@ -94,12 +94,8 @@
           "name": "audit_log_namespace_id_namespaces_id_fk",
           "tableFrom": "audit_log",
           "tableTo": "namespaces",
-          "columnsFrom": [
-            "namespace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["namespace_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -200,12 +196,8 @@
           "name": "checkpoints_namespace_id_namespaces_id_fk",
           "tableFrom": "checkpoints",
           "tableTo": "namespaces",
-          "columnsFrom": [
-            "namespace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["namespace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -363,12 +355,8 @@
           "name": "embeddings_namespace_id_namespaces_id_fk",
           "tableFrom": "embeddings",
           "tableTo": "namespaces",
-          "columnsFrom": [
-            "namespace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["namespace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -536,12 +524,8 @@
           "name": "facts_namespace_id_namespaces_id_fk",
           "tableFrom": "facts",
           "tableTo": "namespaces",
-          "columnsFrom": [
-            "namespace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["namespace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -549,12 +533,8 @@
           "name": "facts_source_interaction_id_interactions_id_fk",
           "tableFrom": "facts",
           "tableTo": "interactions",
-          "columnsFrom": [
-            "source_interaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["source_interaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -683,12 +663,8 @@
           "name": "interactions_namespace_id_namespaces_id_fk",
           "tableFrom": "interactions",
           "tableTo": "namespaces",
-          "columnsFrom": [
-            "namespace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["namespace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -817,12 +793,8 @@
           "name": "model_calls_namespace_id_namespaces_id_fk",
           "tableFrom": "model_calls",
           "tableTo": "namespaces",
-          "columnsFrom": [
-            "namespace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["namespace_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -978,12 +950,8 @@
           "name": "session_summaries_namespace_id_namespaces_id_fk",
           "tableFrom": "session_summaries",
           "tableTo": "namespaces",
-          "columnsFrom": [
-            "namespace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["namespace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1106,12 +1074,8 @@
           "name": "shares_from_namespace_id_namespaces_id_fk",
           "tableFrom": "shares",
           "tableTo": "namespaces",
-          "columnsFrom": [
-            "from_namespace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["from_namespace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1119,12 +1083,8 @@
           "name": "shares_to_namespace_id_namespaces_id_fk",
           "tableFrom": "shares",
           "tableTo": "namespaces",
-          "columnsFrom": [
-            "to_namespace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["to_namespace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1132,12 +1092,8 @@
           "name": "shares_source_fact_id_facts_id_fk",
           "tableFrom": "shares",
           "tableTo": "facts",
-          "columnsFrom": [
-            "source_fact_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["source_fact_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1145,12 +1101,8 @@
           "name": "shares_snapshot_fact_id_facts_id_fk",
           "tableFrom": "shares",
           "tableTo": "facts",
-          "columnsFrom": [
-            "snapshot_fact_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["snapshot_fact_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1166,77 +1118,42 @@
     "public.audit_action": {
       "name": "audit_action",
       "schema": "public",
-      "values": [
-        "remember",
-        "remember_batch",
-        "share",
-        "forget",
-        "config"
-      ]
+      "values": ["remember", "remember_batch", "share", "forget", "config"]
     },
     "public.embedding_owner_type": {
       "name": "embedding_owner_type",
       "schema": "public",
-      "values": [
-        "interaction",
-        "fact",
-        "summary"
-      ]
+      "values": ["interaction", "fact", "summary"]
     },
     "public.embedding_status": {
       "name": "embedding_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "ready",
-        "failed"
-      ]
+      "values": ["pending", "ready", "failed"]
     },
     "public.interaction_role": {
       "name": "interaction_role",
       "schema": "public",
-      "values": [
-        "user",
-        "assistant",
-        "system"
-      ]
+      "values": ["user", "assistant", "system"]
     },
     "public.memory_type": {
       "name": "memory_type",
       "schema": "public",
-      "values": [
-        "interaction",
-        "fact",
-        "summary"
-      ]
+      "values": ["interaction", "fact", "summary"]
     },
     "public.model_call_status": {
       "name": "model_call_status",
       "schema": "public",
-      "values": [
-        "success",
-        "failed",
-        "timeout",
-        "rate_limited",
-        "gated",
-        "fallback"
-      ]
+      "values": ["success", "failed", "timeout", "rate_limited", "gated", "fallback"]
     },
     "public.model_call_type": {
       "name": "model_call_type",
       "schema": "public",
-      "values": [
-        "embedding",
-        "llm"
-      ]
+      "values": ["embedding", "llm"]
     },
     "public.share_mode": {
       "name": "share_mode",
       "schema": "public",
-      "values": [
-        "reference",
-        "snapshot"
-      ]
+      "values": ["reference", "snapshot"]
     }
   },
   "schemas": {},

@@ -6,6 +6,7 @@ import { bootstrapDatabase } from "../../db/bootstrap.js";
 import { createDatabaseClient, pingDatabase } from "../../db/client.js";
 import { runMigrations } from "../../db/migrator.js";
 import { installClaudeEntry } from "./claude-desktop.js";
+import { installCodexEntry } from "./codex.js";
 import {
   isDockerDaemonRunning,
   tryStartDockerDesktop,
@@ -17,6 +18,7 @@ export type UseCommandOptions = {
   namespace?: string;
   postgresUrl?: string;
   skipClaude?: boolean;
+  skipCodex?: boolean;
 };
 
 function bail(): never {
@@ -51,7 +53,7 @@ const DEFAULT_DB_URL = "postgres://codebuddy:codebuddy@localhost:5432/codebuddy"
  * the user has already saved in ~/.codebuddy/global.json; prompts only for
  * what is genuinely missing. Auto-starts Docker Desktop if needed, brings up
  * the bundled Postgres container, applies migrations, and (unless suppressed)
- * registers a per-folder Claude Desktop entry.
+ * registers per-folder Claude Desktop and Codex entries.
  */
 export async function runUseCommand(options: UseCommandOptions = {}): Promise<void> {
   const sigintHandler = () => bail();
@@ -192,17 +194,35 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
       }
     }
 
+    // ── Wire Codex unless suppressed ────────────────────────────────
+    if (!options.skipCodex) {
+      try {
+        const install = await installCodexEntry({
+          namespace,
+          hfToken,
+          databaseUrl,
+        });
+        log.success(
+          `Registered ${pc.bold(install.serverKey)} in Codex. Restart Codex to activate.`,
+        );
+      } catch (error) {
+        log.warn(`Codex registration skipped: ${(error as Error).message}`);
+      }
+    }
+
     note(
       [
         `${pc.green("✓")} CodeBuddy is ready for ${pc.bold(folderName)}.`,
         ``,
         `Next:`,
-        `  1. ${pc.bold("⌘Q")} Claude Desktop and reopen it.`,
-        `  2. In any chat, ask Claude to "remember" or "recall" — it will use the ${pc.cyan(`codebuddy-${namespace}`)} tools automatically.`,
+        `  1. Restart Claude Desktop and Codex.`,
+        `  2. Ask Claude or Codex to "remember" or "recall" — it will use the ${pc.cyan(`codebuddy-${namespace}`)} tools automatically.`,
         ``,
         `Manage:`,
         `  codebuddy claude list           ${pc.dim("# see every project wired up")}`,
+        `  codebuddy codex list            ${pc.dim("# see Codex entries")}`,
         `  codebuddy claude remove codebuddy-${namespace}`,
+        `  codebuddy codex remove codebuddy-${namespace}`,
         `  codebuddy postgres down         ${pc.dim("# stop the DB (data preserved)")}`,
       ].join("\n"),
       "Done",

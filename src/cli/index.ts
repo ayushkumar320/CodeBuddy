@@ -12,6 +12,7 @@ import {
   listClaudeEntries,
   removeClaudeEntry,
 } from "./commands/claude-desktop.js";
+import { installCodexEntry, listCodexEntries, removeCodexEntry } from "./commands/codex.js";
 import { runInitWizard } from "./commands/init-wizard.js";
 import { postgresDown, postgresStatus, postgresUp } from "./commands/postgres-docker.js";
 import { runUseCommand } from "./commands/use-command.js";
@@ -32,16 +33,18 @@ export function createCli(): Command {
     .argument("[namespace]", "Override the namespace (defaults to current folder name).")
     .option("--postgres-url <url>", "Postgres URL to use for this project.")
     .option("--skip-claude", "Do not register with Claude Desktop.")
+    .option("--skip-codex", "Do not register with Codex.")
     .action(
       async (
         namespace: string | undefined,
-        opts: { postgresUrl?: string; skipClaude?: boolean },
+        opts: { postgresUrl?: string; skipClaude?: boolean; skipCodex?: boolean },
       ) => {
         await runSafely(async () => {
           await runUseCommand({
             ...(namespace !== undefined ? { namespace } : {}),
             ...(opts.postgresUrl !== undefined ? { postgresUrl: opts.postgresUrl } : {}),
             ...(opts.skipClaude !== undefined ? { skipClaude: opts.skipClaude } : {}),
+            ...(opts.skipCodex !== undefined ? { skipCodex: opts.skipCodex } : {}),
           });
         });
       },
@@ -175,6 +178,65 @@ export function createCli(): Command {
         if (result.removed) {
           console.log(`removed ${serverKey} from ${result.path}`);
           console.log("Restart Claude Desktop (⌘Q) for the change to take effect.");
+        } else {
+          console.log(`no entry "${serverKey}" found in ${result.path}`);
+          process.exitCode = 1;
+        }
+      });
+    });
+
+  const codex = program
+    .command("codex")
+    .description("Register CodeBuddy as an MCP server in Codex.");
+  codex
+    .command("install")
+    .option("--namespace <name>", "Namespace for this Codex entry.")
+    .option("--server-name <name>", "Override the server key. Defaults to codebuddy-<namespace>.")
+    .description("Add or update a codebuddy MCP entry in ~/.codex/config.toml.")
+    .action(async (opts: { namespace?: string; serverName?: string }) => {
+      await runSafely(async () => {
+        const config = await loadRuntimeConfig();
+        const namespace = opts.namespace ?? config.namespace ?? "default";
+        const install = await installCodexEntry({
+          namespace,
+          ...(config.provider.apiKey ? { hfToken: config.provider.apiKey } : {}),
+          databaseUrl: config.postgresUrl,
+          ...(opts.serverName ? { serverName: opts.serverName } : {}),
+        });
+        console.log(
+          `${install.created ? "added" : "updated"} ${install.serverKey} in ${install.path}`,
+        );
+        console.log("Restart Codex to activate.");
+      });
+    });
+  codex
+    .command("list")
+    .description("List codebuddy entries currently registered in Codex.")
+    .action(async () => {
+      await runSafely(async () => {
+        const result = await listCodexEntries();
+        if (result.entries.length === 0) {
+          console.log(`No codebuddy entries in ${result.path}.`);
+          return;
+        }
+        console.log(`Codex config: ${result.path}`);
+        for (const entry of result.entries) {
+          console.log(
+            `  ${entry.key}  namespace=${entry.namespace ?? "?"}  db=${entry.databaseUrl ?? "?"}`,
+          );
+        }
+      });
+    });
+  codex
+    .command("remove")
+    .argument("<serverKey>", "e.g. codebuddy-work")
+    .description("Remove a codebuddy entry from Codex config.")
+    .action(async (serverKey: string) => {
+      await runSafely(async () => {
+        const result = await removeCodexEntry(serverKey);
+        if (result.removed) {
+          console.log(`removed ${serverKey} from ${result.path}`);
+          console.log("Restart Codex for the change to take effect.");
         } else {
           console.log(`no entry "${serverKey}" found in ${result.path}`);
           process.exitCode = 1;
