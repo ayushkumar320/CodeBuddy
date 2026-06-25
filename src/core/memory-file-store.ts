@@ -1,6 +1,6 @@
 import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import matter from "gray-matter";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 const factFrontMatterSchema = z.object({
@@ -42,23 +42,22 @@ export class MemoryFileStore {
     await this.prepareDirectory();
     await assertNoSymlinkBetween(this.repositoryRoot, dirname(path));
 
-    const document = matter.stringify(
-      input.content.endsWith("\n") ? input.content : `${input.content}\n`,
-      {
-        schemaVersion: 1,
-        id: input.id,
-        namespace: input.namespace,
-        type: "fact",
-        subject: input.subject,
-        predicate: input.predicate,
-        object: input.object,
-        confidence: input.confidence,
-        createdAt: input.createdAt,
-        createdByAgent: input.createdByAgent,
-        sourceInteractionId: input.sourceInteractionId,
-        sourceDeleted: input.sourceDeleted,
-      },
-    );
+    const frontMatter = stringifyYaml({
+      schemaVersion: 1,
+      id: input.id,
+      namespace: input.namespace,
+      type: "fact",
+      subject: input.subject,
+      predicate: input.predicate,
+      object: input.object,
+      confidence: input.confidence,
+      createdAt: input.createdAt,
+      createdByAgent: input.createdByAgent,
+      sourceInteractionId: input.sourceInteractionId,
+      sourceDeleted: input.sourceDeleted,
+    }).trimEnd();
+    const content = input.content.endsWith("\n") ? input.content : `${input.content}\n`;
+    const document = `---\n${frontMatter}\n---\n${content}`;
 
     const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
     const handle = await open(temporaryPath, "wx", 0o600);
@@ -75,8 +74,8 @@ export class MemoryFileStore {
   async readFact(pathOrId: string): Promise<FactFile> {
     const path = pathOrId.endsWith(".md") ? this.safePath(pathOrId) : this.factPath(pathOrId);
     await assertNoSymlinkBetween(this.repositoryRoot, path);
-    const parsed = matter(await readFile(path, "utf8"));
-    const metadata = factFrontMatterSchema.parse(parsed.data);
+    const parsed = parseFrontMatter(await readFile(path, "utf8"));
+    const metadata = factFrontMatterSchema.parse(parseYaml(parsed.frontMatter));
     return {
       ...metadata,
       content: parsed.content.trim(),
@@ -124,6 +123,20 @@ export class MemoryFileStore {
     await assertNoSymlinkBetween(this.repositoryRoot, dirname(this.factsDirectory));
     await mkdir(this.factsDirectory, { recursive: true, mode: 0o700 });
   }
+}
+
+function parseFrontMatter(document: string): { frontMatter: string; content: string } {
+  if (!document.startsWith("---\n")) {
+    throw new Error("Memory file must start with YAML front matter.");
+  }
+  const closingIndex = document.indexOf("\n---\n", 4);
+  if (closingIndex === -1) {
+    throw new Error("Memory file has unterminated YAML front matter.");
+  }
+  return {
+    frontMatter: document.slice(4, closingIndex),
+    content: document.slice(closingIndex + 5),
+  };
 }
 
 async function assertNoSymlinkBetween(root: string, target: string): Promise<void> {

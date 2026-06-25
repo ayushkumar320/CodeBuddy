@@ -65,6 +65,15 @@ describe("MemoryFileStore", () => {
     ).rejects.toThrow("Invalid fact id");
   });
 
+  it("rejects malformed or unterminated front matter", async () => {
+    const root = await temporaryRoot();
+    const store = new MemoryFileStore(root);
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(store.factsDirectory, { recursive: true });
+    await writeFile(join(store.factsDirectory, "fact_bad.md"), "---\nid: fact_bad\nno closing");
+    await expect(store.readFact("fact_bad")).rejects.toThrow("unterminated YAML front matter");
+  });
+
   it("refuses a symlinked .codebuddy directory", async () => {
     const root = await temporaryRoot();
     const outside = await temporaryRoot();
