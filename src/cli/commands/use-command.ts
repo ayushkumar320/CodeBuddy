@@ -183,6 +183,7 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
       try {
         const install = await installClaudeEntry({
           namespace,
+          projectRoot: process.cwd(),
           hfToken,
           databaseUrl,
         });
@@ -199,6 +200,7 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
       try {
         const install = await installCodexEntry({
           namespace,
+          projectRoot: process.cwd(),
           hfToken,
           databaseUrl,
         });

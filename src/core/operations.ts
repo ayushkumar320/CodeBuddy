@@ -6,6 +6,7 @@ import type { ModelProvider } from "../providers/adapter.js";
 import { DEFAULT_EMBEDDING_MODELS, DEFAULT_LLM_MODELS } from "../providers/models.js";
 import { CodeBuddy } from "./codebuddy.js";
 import { checkConfigPermissions, loadRuntimeConfig, redactSecrets } from "./config-file.js";
+import { MemoryFileStore } from "./memory-file-store.js";
 import type { MemoryRepository } from "./repository.js";
 import type { CodeBuddyConfig } from "./types.js";
 
@@ -22,6 +23,7 @@ export type CreateRuntimeOptions = {
    * Drizzle skips migrations it has already applied.
    */
   autoBootstrap?: boolean;
+  repositoryRoot?: string;
 };
 
 export async function createRuntime(
@@ -35,7 +37,12 @@ export async function createRuntime(
     await runMigrations(client);
   }
   const repository = createPostgresRepository(client);
-  const memory = new CodeBuddy(runtimeConfig, { repository });
+  const memory = new CodeBuddy(runtimeConfig, {
+    repository,
+    memoryFileStore: new MemoryFileStore(
+      options.repositoryRoot ?? runtimeConfig.projectRoot ?? process.cwd(),
+    ),
+  });
   await memory.init();
   return {
     memory,

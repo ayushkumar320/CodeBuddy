@@ -22,6 +22,7 @@ export async function writeCodexConfig(path: string, content: string): Promise<v
 
 export type InstallCodexEntryOptions = {
   namespace: string;
+  projectRoot?: string;
   hfToken?: string;
   databaseUrl?: string;
   serverName?: string;

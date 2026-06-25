@@ -13,6 +13,7 @@ import {
   generateSessionId,
   generateUlid,
 } from "./ids.js";
+import type { FactFile, MemoryFileStore } from "./memory-file-store.js";
 import type {
   AuditEntry,
   FactInsert,
@@ -40,6 +41,7 @@ import { EmbeddingWorker } from "./worker.js";
 
 export type CodeBuddyDependencies = {
   repository: MemoryRepository;
+  memoryFileStore?: MemoryFileStore;
   provider?: ModelProvider;
   worker?: EmbeddingWorker;
   policy?: ContextPolicy;
@@ -53,6 +55,7 @@ export class CodeBuddy {
   private readonly worker: EmbeddingWorker;
   private readonly policy: ContextPolicy;
   private readonly tracer: Tracer;
+  private readonly memoryFileStore: MemoryFileStore | undefined;
   private namespaceId: string | null = null;
   private initialized = false;
 
@@ -64,6 +67,7 @@ export class CodeBuddy {
       );
     }
     this.repo = deps.repository;
+    this.memoryFileStore = deps.memoryFileStore;
     this.provider = deps.provider ?? buildProviderFromConfig(this.config.provider);
     this.worker =
       deps.worker ??
@@ -291,9 +295,28 @@ export class CodeBuddy {
     };
     const factResult = await this.repo.forgetFact(id, factAudit);
     if (factResult.found) {
+      await this.memoryFileStore?.deleteFact(id);
       return { ok: true, entityType: "fact" };
     }
     return { ok: false, entityType: "unknown" };
+  }
+
+  async reindexFacts(): Promise<{ scanned: number; imported: number; deduplicated: number }> {
+    const namespaceId = this.requireNamespaceId();
+    if (!this.memoryFileStore) {
+      throw new Error("Fact reindexing requires a repository-rooted MemoryFileStore.");
+    }
+    const facts = await this.memoryFileStore.listFacts();
+    let imported = 0;
+    let deduplicated = 0;
+    for (const fact of facts) {
+      if (fact.namespace !== this.config.namespace) continue;
+      const result = await this.importFactFile(namespaceId, fact);
+      if (result.deduplicated) deduplicated += 1;
+      else imported += 1;
+    }
+    this.worker.notify();
+    return { scanned: facts.length, imported, deduplicated };
   }
 
   private requireNamespaceId(): string {
@@ -360,7 +383,31 @@ export class CodeBuddy {
         object: input.content.slice(0, 200),
         ...(input.agentId !== undefined ? { createdByAgent: input.agentId } : {}),
       };
-      return this.repo.writeFact({ fact, embedding, audit });
+      const result = await this.repo.writeFact({ fact, embedding, audit });
+      if (this.memoryFileStore) {
+        if (result.deduplicated) {
+          try {
+            await this.memoryFileStore.readFact(result.id);
+            return result;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          }
+        }
+        await this.memoryFileStore.writeFact({
+          id: result.id,
+          namespace: this.config.namespace,
+          subject: fact.subject,
+          predicate: fact.predicate,
+          object: fact.object,
+          confidence: 1,
+          createdAt: new Date().toISOString(),
+          createdByAgent: input.agentId ?? null,
+          sourceInteractionId: fact.sourceInteractionId ?? null,
+          sourceDeleted: false,
+          content: fact.content,
+        });
+      }
+      return result;
     }
     const summary: SummaryInsert = {
       id: ownerId,
@@ -371,6 +418,39 @@ export class CodeBuddy {
       ...(input.agentId !== undefined ? { createdByAgent: input.agentId } : {}),
     };
     return this.repo.writeSummary({ summary, embedding, audit });
+  }
+
+  private async importFactFile(namespaceId: string, file: FactFile): Promise<WriteResult> {
+    const embeddingModel = DEFAULT_EMBEDDING_MODELS[0]?.id ?? "unknown";
+    const fact: FactInsert = {
+      id: file.id,
+      namespaceId,
+      content: file.content,
+      contentHash: computeFactHash(this.config.namespace, file.content),
+      subject: file.subject,
+      predicate: file.predicate,
+      object: file.object,
+      ...(file.sourceInteractionId ? { sourceInteractionId: file.sourceInteractionId } : {}),
+      ...(file.createdByAgent ? { createdByAgent: file.createdByAgent } : {}),
+    };
+    return this.repo.writeFact({
+      fact,
+      embedding: {
+        id: generateEntityId("emb"),
+        namespaceId,
+        ownerType: "fact",
+        ownerId: file.id,
+        embeddingModel,
+      },
+      audit: {
+        id: generateEntityId("aud"),
+        namespaceId,
+        action: "remember",
+        entityType: "fact",
+        entityId: file.id,
+        metadata: { source: "reindex", path: file.path },
+      },
+    });
   }
 }
 

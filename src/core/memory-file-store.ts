@@ -1,0 +1,151 @@
+import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import matter from "gray-matter";
+import { z } from "zod";
+
+const factFrontMatterSchema = z.object({
+  schemaVersion: z.literal(1),
+  id: z.string().regex(/^fact_[a-z0-9]+$/),
+  namespace: z.string().min(1),
+  type: z.literal("fact"),
+  subject: z.string(),
+  predicate: z.string(),
+  object: z.string(),
+  confidence: z.number().min(0).max(1),
+  createdAt: z.preprocess(
+    (value) => (value instanceof Date ? value.toISOString() : value),
+    z.string().datetime(),
+  ),
+  createdByAgent: z.string().nullable(),
+  sourceInteractionId: z.string().nullable(),
+  sourceDeleted: z.boolean(),
+});
+
+export type FactFile = z.infer<typeof factFrontMatterSchema> & {
+  content: string;
+  path: string;
+};
+
+export type FactFileWrite = Omit<FactFile, "path" | "schemaVersion" | "type">;
+
+export class MemoryFileStore {
+  readonly repositoryRoot: string;
+  readonly factsDirectory: string;
+
+  constructor(repositoryRoot = process.cwd()) {
+    this.repositoryRoot = resolve(repositoryRoot);
+    this.factsDirectory = join(this.repositoryRoot, ".codebuddy", "memory", "facts");
+  }
+
+  async writeFact(input: FactFileWrite): Promise<string> {
+    const path = this.factPath(input.id);
+    await this.prepareDirectory();
+    await assertNoSymlinkBetween(this.repositoryRoot, dirname(path));
+
+    const document = matter.stringify(
+      input.content.endsWith("\n") ? input.content : `${input.content}\n`,
+      {
+        schemaVersion: 1,
+        id: input.id,
+        namespace: input.namespace,
+        type: "fact",
+        subject: input.subject,
+        predicate: input.predicate,
+        object: input.object,
+        confidence: input.confidence,
+        createdAt: input.createdAt,
+        createdByAgent: input.createdByAgent,
+        sourceInteractionId: input.sourceInteractionId,
+        sourceDeleted: input.sourceDeleted,
+      },
+    );
+
+    const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+    const handle = await open(temporaryPath, "wx", 0o600);
+    try {
+      await handle.writeFile(document, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(temporaryPath, path);
+    return path;
+  }
+
+  async readFact(pathOrId: string): Promise<FactFile> {
+    const path = pathOrId.endsWith(".md") ? this.safePath(pathOrId) : this.factPath(pathOrId);
+    await assertNoSymlinkBetween(this.repositoryRoot, path);
+    const parsed = matter(await readFile(path, "utf8"));
+    const metadata = factFrontMatterSchema.parse(parsed.data);
+    return {
+      ...metadata,
+      content: parsed.content.trim(),
+      path,
+    };
+  }
+
+  async listFacts(): Promise<FactFile[]> {
+    try {
+      await this.prepareDirectory();
+      const entries = await readdir(this.factsDirectory, { withFileTypes: true });
+      const facts: FactFile[] = [];
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+        facts.push(await this.readFact(join(this.factsDirectory, entry.name)));
+      }
+      return facts;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  async deleteFact(id: string): Promise<void> {
+    await rm(this.factPath(id), { force: true });
+  }
+
+  private factPath(id: string): string {
+    if (!/^fact_[a-z0-9]+$/.test(id)) {
+      throw new Error(`Invalid fact id: ${id}`);
+    }
+    return this.safePath(join(this.factsDirectory, `${id}.md`));
+  }
+
+  private safePath(path: string): string {
+    const absolute = resolve(path);
+    const relativePath = relative(this.repositoryRoot, absolute);
+    if (relativePath === ".." || relativePath.startsWith(`..${sep}`) || relativePath === "") {
+      throw new Error(`Memory path escapes repository root: ${path}`);
+    }
+    return absolute;
+  }
+
+  private async prepareDirectory(): Promise<void> {
+    await assertNoSymlinkBetween(this.repositoryRoot, dirname(this.factsDirectory));
+    await mkdir(this.factsDirectory, { recursive: true, mode: 0o700 });
+  }
+}
+
+async function assertNoSymlinkBetween(root: string, target: string): Promise<void> {
+  const absoluteRoot = resolve(root);
+  const absoluteTarget = resolve(target);
+  const relativeTarget = relative(absoluteRoot, absoluteTarget);
+  if (relativeTarget === ".." || relativeTarget.startsWith(`..${sep}`)) {
+    throw new Error(`Memory path escapes repository root: ${target}`);
+  }
+
+  let current = absoluteRoot;
+  const parts = relativeTarget.split(sep).filter(Boolean);
+  for (const part of parts) {
+    current = join(current, part);
+    try {
+      const info = await lstat(current);
+      if (info.isSymbolicLink()) {
+        throw new Error(`Refusing to use symlinked memory path: ${current}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+  }
+}

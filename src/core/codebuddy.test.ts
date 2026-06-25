@@ -1,7 +1,11 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { EmbeddingRequest, ModelProvider } from "../providers/adapter.js";
 import { CodeBuddy } from "./codebuddy.js";
 import { InMemoryMemoryRepository } from "./in-memory-repository.js";
+import { MemoryFileStore } from "./memory-file-store.js";
 import type { CodeBuddyConfig } from "./types.js";
 
 function mockProvider(
@@ -114,6 +118,69 @@ describe("remember", () => {
     expect(dup.deduplicated).toBe(true);
     expect(repository.facts.size).toBe(1);
     await sdk.shutdown();
+  });
+
+  it("dual-writes facts to Markdown without duplicating files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codebuddy-dual-write-"));
+    try {
+      const repository = new InMemoryMemoryRepository();
+      const store = new MemoryFileStore(root);
+      const sdk = new CodeBuddy(baseConfig, {
+        repository,
+        provider: mockProvider(),
+        memoryFileStore: store,
+      });
+      await sdk.init();
+      const first = await sdk.remember({ content: "Use layer caching.", type: "fact" });
+      const second = await sdk.remember({ content: "Use layer caching.", type: "fact" });
+      expect(second.id).toBe(first.id);
+      expect(await store.listFacts()).toHaveLength(1);
+      expect((await store.readFact(first.id)).content).toBe("Use layer caching.");
+      await sdk.shutdown();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rebuilds fact records from Markdown after repository recreation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codebuddy-reindex-"));
+    try {
+      const store = new MemoryFileStore(root);
+      const firstRepository = new InMemoryMemoryRepository();
+      const firstSdk = new CodeBuddy(baseConfig, {
+        repository: firstRepository,
+        provider: mockProvider(),
+        memoryFileStore: store,
+      });
+      await firstSdk.init();
+      const remembered = await firstSdk.remember({
+        content: "Deployment target is eu-west-1.",
+        type: "fact",
+      });
+      await firstSdk.shutdown();
+
+      const rebuiltRepository = new InMemoryMemoryRepository();
+      const rebuiltSdk = new CodeBuddy(baseConfig, {
+        repository: rebuiltRepository,
+        provider: mockProvider(),
+        memoryFileStore: store,
+      });
+      await rebuiltSdk.init();
+      const result = await rebuiltSdk.reindexFacts();
+      expect(result).toEqual({ scanned: 1, imported: 1, deduplicated: 0 });
+      expect(rebuiltRepository.facts.get(remembered.id)?.content).toBe(
+        "Deployment target is eu-west-1.",
+      );
+      await rebuiltSdk.getWorker().drain();
+      const recalled = await rebuiltSdk.recall({
+        sessionId: "recovered",
+        query: "deployment target",
+      });
+      expect(recalled.messages.some((message) => message.content.includes("eu-west-1"))).toBe(true);
+      await rebuiltSdk.shutdown();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("creates the embedding row as pending inside the write", async () => {

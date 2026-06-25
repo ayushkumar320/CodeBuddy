@@ -82,6 +82,16 @@ export function createCli(): Command {
       });
     });
 
+  program
+    .command("reindex")
+    .description("Rebuild fact records and pending embeddings from Markdown files.")
+    .option("--full", "Scan every Markdown fact file.")
+    .action(async (_opts: { full?: boolean }) => {
+      await withRuntime(async (runtime) => {
+        console.log(JSON.stringify(await runtime.memory.reindexFacts(), null, 2));
+      });
+    });
+
   const postgres = program
     .command("postgres")
     .description("Manage the bundled Postgres container.");
@@ -139,6 +149,7 @@ export function createCli(): Command {
         const namespace = opts.namespace ?? config.namespace ?? "default";
         const install = await installClaudeEntry({
           namespace,
+          projectRoot: process.cwd(),
           ...(config.provider.apiKey ? { hfToken: config.provider.apiKey } : {}),
           ...(process.env.GROQ_API_KEY ? { groqApiKey: process.env.GROQ_API_KEY } : {}),
           databaseUrl: config.postgresUrl,
@@ -199,6 +210,7 @@ export function createCli(): Command {
         const namespace = opts.namespace ?? config.namespace ?? "default";
         const install = await installCodexEntry({
           namespace,
+          projectRoot: process.cwd(),
           ...(config.provider.apiKey ? { hfToken: config.provider.apiKey } : {}),
           databaseUrl: config.postgresUrl,
           ...(opts.serverName ? { serverName: opts.serverName } : {}),

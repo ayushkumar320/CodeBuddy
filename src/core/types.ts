@@ -15,6 +15,7 @@ export type CodeBuddyConfig = {
   postgresUrl: string;
   provider: ProviderConfig;
   namespace: string;
+  projectRoot?: string;
   tokenBudget?: number;
   worker?: WorkerConfig;
 };

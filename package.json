@@ -68,6 +68,7 @@
     "@modelcontextprotocol/sdk": "^1.17.5",
     "commander": "^14.0.0",
     "drizzle-orm": "^0.45.2",
+    "gray-matter": "^4.0.3",
     "js-tiktoken": "^1.0.21",
     "langsmith": "^0.7.10",
     "ora": "^8.2.0",

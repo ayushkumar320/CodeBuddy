@@ -7,6 +7,8 @@ export {
   loadRuntimeConfig,
   redactSecrets,
 } from "./core/config-file.js";
+export type { FactFile, FactFileWrite } from "./core/memory-file-store.js";
+export { MemoryFileStore } from "./core/memory-file-store.js";
 export {
   createRuntime,
   decodeFactCursor,

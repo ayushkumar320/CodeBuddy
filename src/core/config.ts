@@ -14,6 +14,7 @@ export const codeBuddyConfigSchema = z.object({
     .min(1, "namespace is required")
     .max(128, "namespace must be 128 chars or fewer")
     .regex(/^[a-zA-Z0-9_.:-]+$/, "namespace must match [a-zA-Z0-9_.:-]+"),
+  projectRoot: z.string().min(1).optional(),
   tokenBudget: z.number().int().positive().max(1_000_000).optional(),
   worker: z
     .object({

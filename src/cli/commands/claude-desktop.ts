@@ -75,6 +75,7 @@ export function resolveCliEntrypoint(): string {
 
 export type InstallEntryOptions = {
   namespace: string;
+  projectRoot?: string;
   hfToken?: string;
   groqApiKey?: string;
   databaseUrl?: string;
@@ -85,6 +86,7 @@ export function buildEntry(options: InstallEntryOptions): ClaudeDesktopEntry {
   const env: Record<string, string> = {
     CODEBUDDY_NAMESPACE: options.namespace,
   };
+  if (options.projectRoot) env.CODEBUDDY_PROJECT_ROOT = options.projectRoot;
   if (options.hfToken) env.HF_TOKEN = options.hfToken;
   if (options.groqApiKey) env.GROQ_API_KEY = options.groqApiKey;
   if (options.databaseUrl) env.DATABASE_URL = options.databaseUrl;

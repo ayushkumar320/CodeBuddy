@@ -76,6 +76,7 @@ export async function loadRuntimeConfig(cwd = process.cwd()): Promise<CodeBuddyC
   return {
     postgresUrl,
     namespace: process.env.CODEBUDDY_NAMESPACE ?? file.namespace ?? "default",
+    projectRoot: process.env.CODEBUDDY_PROJECT_ROOT ?? cwd,
     provider: {
       type: "huggingface",
       ...(hfToken ? { apiKey: hfToken } : {}),
