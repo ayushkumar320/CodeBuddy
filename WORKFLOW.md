@@ -7,7 +7,8 @@ This is the simple mental model for how CodeBuddy works.
 CodeBuddy is a shared notebook for AI agents.
 
 - Agents write memories into the notebook.
-- CodeBuddy stores the memories in Postgres.
+- CodeBuddy writes curated facts and summaries to Markdown and Postgres.
+- Raw interactions and operational data remain in Postgres.
 - Embeddings are prepared in the background so related memories can be found later.
 - When an agent asks a question, CodeBuddy picks the most useful memories that fit inside the token budget.
 - Agents can share facts with other agents through namespaces.
@@ -24,7 +25,12 @@ SDK / MCP Tool / CLI
      v
 CodeBuddy Core
      |
-     +--> Postgres transaction
+     +--> Markdown file store (facts + summaries)
+     |      |
+     |      +--> versioned YAML front matter
+     |      +--> atomic write + fsync + rename
+     |
+     +--> Postgres transaction/index
      |      |
      |      +--> write interaction/fact/summary
      |      +--> create embedding row as pending
@@ -63,9 +69,34 @@ Planner packs best items under token budget
 3. CodeBuddy computes a content hash if no idempotency key is provided.
 4. It takes a Postgres advisory lock for `(namespace, sessionId)`.
 5. In one transaction, it writes the memory row and creates an embedding row with `status=pending`.
-6. If the same content or idempotency key already exists, it returns the original ID with `deduplicated: true`.
-7. After the transaction, the in-process worker asks Hugging Face for embeddings.
-8. The embedding row becomes `ready` or `failed`.
+6. For facts and summaries, it also writes a Markdown file.
+7. If the same content or idempotency key already exists, it returns the original ID with `deduplicated: true`.
+8. After the transaction, the in-process worker asks Hugging Face for embeddings.
+9. The embedding row becomes `ready` or `failed`.
+
+## Migration And Recovery Flow
+
+```text
+existing PostgreSQL memories
+          |
+          v
+codebuddy migrate to-files       (preview only)
+          |
+          v
+codebuddy migrate to-files --write
+          |
+          v
+.codebuddy/memory/**/*.md
+          |
+          v
+codebuddy reindex --full         (after DB recreation)
+          |
+          v
+restored fact + summary rows and pending embeddings
+```
+
+Migration never overwrites same-ID files. Content differences are reported as
+checksum conflicts for manual review.
 
 ## Recall Flow In Detail
 
@@ -119,4 +150,3 @@ Hugging Face free-tier models can be cold or rate-limited. CodeBuddy should not 
 - `stats` explains memory selection.
 - `doctor` explains operational problems.
 - Agent handoffs are explicit through namespaces and shares.
-

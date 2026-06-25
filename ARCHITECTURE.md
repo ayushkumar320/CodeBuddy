@@ -1,5 +1,32 @@
 # Architecture
 
+## Storage Model
+
+CodeBuddy uses a dual-write transition model:
+
+- facts and summaries are written to PostgreSQL and Markdown
+- files live under `.codebuddy/memory/facts/` and
+  `.codebuddy/memory/summaries/`
+- PostgreSQL remains the active query/index layer
+- `codebuddy reindex --full` can recreate fact, summary, and pending embedding
+  records from those files
+
+The files use versioned YAML front matter, atomic temporary-file writes,
+`fsync`, and rename. Repository-root validation rejects traversal and
+symlinked memory paths.
+
+The following data remains database-only:
+
+- raw interactions
+- share relationships and tombstones
+- audit logs
+- model diagnostics
+- generated embedding vectors
+
+`codebuddy migrate to-files` is a non-writing preview. `--write` exports
+missing files but never truncates database tables or overwrites conflicts.
+Same-ID/different-content conflicts are reported with SHA-256 checksums.
+
 ## Concurrency Model
 
 `remember` uses Postgres advisory locks keyed by `(namespace, session_id)` so concurrent writers for the same session do not race.
@@ -137,7 +164,9 @@ Rules:
 
 ## Privacy
 
-- CodeBuddy stores conversation and fact content in plaintext in Postgres
+- facts and summaries are plaintext Markdown
+- conversations, shares, telemetry, and indexes are plaintext in PostgreSQL
+- project owners decide whether `.codebuddy/memory/` is committed or ignored
 - encryption at rest is a deployment responsibility, not an app-layer feature in v0.1
 - no automatic PII detection ships in v0.1
 - later releases may add sensitivity metadata and redaction workflows

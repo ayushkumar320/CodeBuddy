@@ -1,6 +1,9 @@
 # CodeBuddy
 
-MCP memory server for multi-agent systems. CodeBuddy stores agent memory in PostgreSQL with pgvector, uses Hugging Face for embeddings and model calls, exposes an MCP stdio server, and drops into LangGraph flows.
+MCP memory server for multi-agent systems. Curated facts and summaries are
+written as readable Markdown under `.codebuddy/memory/` and indexed in
+PostgreSQL with pgvector. CodeBuddy also exposes an MCP stdio server and
+LangGraph helpers.
 
 ## What It Ships
 
@@ -27,7 +30,7 @@ Optional peer dependency:
 Install once globally, then let the interactive wizard wire everything:
 
 ```bash
-npm install -g codebuddy
+npm install -g @ayushkumar320/codebuddy
 codebuddy init
 ```
 
@@ -65,8 +68,73 @@ codebuddy postgres down       # stop the bundled DB (volume preserved)
 codebuddy stats               # storage + usage stats
 codebuddy inspect <namespace> # contents + per-agent breakdown
 codebuddy list-facts          # paginate facts
+codebuddy migrate to-files    # preview export of existing DB memories
+codebuddy migrate to-files --write
+codebuddy reindex --full      # rebuild facts + summaries from Markdown
 codebuddy prune --older-than 30d
 ```
+
+## File-backed memory
+
+Facts and summaries written through normal CLI/MCP runtimes are stored in:
+
+```text
+.codebuddy/
+└── memory/
+    ├── facts/
+    │   └── fact_<id>.md
+    └── summaries/
+        └── sum_<id>.md
+```
+
+The Markdown files contain versioned YAML front matter followed by the memory
+text. PostgreSQL still stores the current searchable records and embeddings,
+but the files can reconstruct facts and summaries after database loss.
+
+Interactions, shares, audit records, model diagnostics, and generated
+embeddings remain PostgreSQL-only in this release.
+
+### Upgrade existing memories
+
+Preview the migration without writing files:
+
+```bash
+codebuddy migrate to-files
+```
+
+Write missing fact and summary files:
+
+```bash
+codebuddy migrate to-files --write
+```
+
+The operation is non-destructive and idempotent. It does not truncate database
+tables or overwrite existing files. If a file has the same ID but different
+content, the command reports a conflict with database and file checksums.
+
+Review the output and the generated files before committing them.
+
+### Restore after database loss
+
+Start an empty PostgreSQL database, apply migrations, then rebuild:
+
+```bash
+codebuddy postgres up
+codebuddy migrate
+codebuddy reindex --full
+```
+
+Reindex restores fact and summary rows and creates pending embeddings. The
+embedding worker regenerates vectors afterward.
+
+### Rollback
+
+The migration does not delete old database records. To roll back before a
+database loss, keep using the same database and remove or ignore the generated
+`.codebuddy/memory/` directory. Back up the directory before deleting it.
+
+After database loss, Markdown restores facts and summaries only. It cannot
+restore raw interactions, share relationships, audit logs, or diagnostics.
 
 ## Configuration
 
@@ -234,7 +302,11 @@ Doctor reports database connectivity, pgvector availability, vector/index health
 
 ## Privacy
 
-- CodeBuddy stores conversation and fact content in plaintext in Postgres
+- CodeBuddy stores facts and summaries in plaintext Markdown
+- conversations, shares, telemetry, and indexed data are stored in PostgreSQL
+- inspect `.codebuddy/memory/` before committing it because facts may contain secrets
+- for private project memory, add `.codebuddy/memory/` to the project’s `.gitignore`
+- for selective sharing, ignore a private subdirectory and keep public memory separate
 - encryption at rest is the deployment owner’s responsibility
 - v0.1 has no automatic PII detection
 - sensitivity metadata and redaction workflows are deferred

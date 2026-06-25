@@ -20,7 +20,7 @@ https://huggingface.co/settings/tokens
 Install the package globally:
 
 ```bash
-npm install -g codebuddy
+npm install -g @ayushkumar320/codebuddy
 ```
 
 Check the CLI:
@@ -104,7 +104,41 @@ docker volume rm <codebuddy-volume-name>
 docker compose up -d
 ```
 
-Only reset the volume if you want to delete local CodeBuddy memory.
+Before resetting the volume, export any older database-only facts and
+summaries:
+
+```bash
+codebuddy migrate to-files
+codebuddy migrate to-files --write
+```
+
+After resetting the volume:
+
+```bash
+codebuddy migrate
+codebuddy reindex --full
+```
+
+Facts and summaries can be restored from `.codebuddy/memory/`. Raw
+interactions, shares, audit logs, and model diagnostics remain database-only
+and are lost with the volume.
+
+## Memory Privacy
+
+Markdown memory is plaintext. Inspect it before committing:
+
+```bash
+find .codebuddy/memory -type f -maxdepth 3
+```
+
+To keep all project memory private, add this to the project `.gitignore`:
+
+```gitignore
+.codebuddy/memory/
+```
+
+Do not place API tokens, passwords, private keys, or unredacted personal data
+in committed memory files.
 
 ## Initialize CodeBuddy
 
