@@ -13,9 +13,14 @@ In Progress → Shipped → Superseded.
 
 | # | Title | Status | Target | Owner |
 |---|---|---|---|---|
+| [00](./00-storage-model.md) | Storage Model (markdown-first, DB as derived index) | Draft | v0.2.0 | @ayushkumar320 |
 | [01](./01-architecture-map.md) | Architecture Map | Draft | v0.2.0 | @ayushkumar320 |
-| [02](./02-plan-panel.md) | Plan Panel | Draft | v0.2.0 | @ayushkumar320 |
+| [02](./02-plan-panel.md) | Plan Panel | Draft (revised — markdown-first) | v0.2.0 | @ayushkumar320 |
 | [03](./03-risk-panel.md) | Risk Panel | Draft | v0.2.0 | @ayushkumar320 |
+
+**Read 00 first.** It establishes the markdown-first storage decision that
+01, 02, and 03 all depend on. Without 00 the others are still readable but
+the file/database split they reference will be confusing.
 
 ## How the three fit together
 
@@ -47,13 +52,15 @@ In Progress → Shipped → Superseded.
 ### Dependency graph between proposals
 
 ```
-Architecture Map ─┬─▶ Risk Panel
-                  │
-Plan Panel ───────┴─▶ Risk Panel
+00 Storage Model ──▶ 01 Architecture Map ─┬─▶ 03 Risk Panel
+                ───▶ 02 Plan Panel ───────┘
 ```
 
-- **01 Architecture Map** is the foundation. It can ship alone; nothing
-  blocks it.
+- **00 Storage Model** is the architectural decision the other three sit on
+  top of. Markdown is the source of truth; Postgres is a derived index.
+  Read this first; otherwise the table/file split in 01–03 looks arbitrary.
+- **01 Architecture Map** is the foundation for graph queries. It can ship
+  alone; nothing blocks it.
 - **02 Plan Panel** can ship alone. It is independent of 01. When 01 is
   available, the plan generator may consult the map to suggest
   `filesToTouch`, but the panel works without it.
@@ -66,9 +73,15 @@ Plan Panel ───────┴─▶ Risk Panel
 
 Recommended order for a solo developer working on this:
 
-1. Land **02 Plan Panel** first. Smallest scope, no parser work, ships
-   the most visible UX shift (plans-as-artefacts instead of chat).
-   Estimated: 1 week of focused work.
+0. Implement **00 Storage Model** first. Shifts memory + plans onto the
+   filesystem, repoints `embeddings` at file paths, ships a
+   `codebuddy reindex` command and a `codebuddy migrate to-files`
+   migration for existing v0.1 installs.
+   Estimated: 1 week.
+1. Land **02 Plan Panel** next. With 00 in place, plans are just one
+   more markdown surface. Ships the most visible UX shift
+   (plans-as-artefacts instead of chat).
+   Estimated: 1 week.
 2. Land **01 Architecture Map** next. Larger, but unlocks 03 and pays
    for itself on every future feature that needs the graph.
    Estimated: 3 weeks.
@@ -76,7 +89,7 @@ Recommended order for a solo developer working on this:
    it composes signals from the other two and from existing memory.
    Estimated: 1 week.
 
-Total: ~5 weeks for the v0.2 workspace foundation.
+Total: ~6 weeks for the v0.2 workspace foundation.
 
 ## Conventions for new proposals
 

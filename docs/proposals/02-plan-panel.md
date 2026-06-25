@@ -1,16 +1,17 @@
 # Proposal 02 — Plan Panel
 
-Status: Draft
+Status: Draft (revised — markdown-first)
 Owner: @ayushkumar320
 Target: v0.2.0
-Depends on: existing `MemoryRepository`, the LLM provider layer
-Independent of: Proposal 01 (Architecture Map). The Plan panel ships
-without the map; it just gains better defaults once 01 lands.
+Depends on: Proposal 00 (Storage Model). Independent of 01 and 03.
+Supersedes: the Postgres-first version of this doc previously at
+            commit `34b65df`. Plans now live as markdown files;
+            Postgres holds an index only.
 
 ## Why this exists
 
 The default interface for telling an AI "do X" is a chat prompt. The model
-inflates the prompt into an implicit plan, executes it, and the only artefact
+inflates the prompt into an implicit plan, executes it, and the only artifact
 left behind is a stream of tool calls. If the developer disagreed with the
 approach, the disagreement happens *after* the work, in the form of "no,
 undo that and try again."
@@ -28,19 +29,26 @@ duck or smear across chat:
    and can be edited?
 2. What did the agent end up doing, and how did that differ from the plan?
 
+Per Proposal 00, plans live as markdown files committed to git. The database
+holds a derived index for fast filtering, not the plan content itself.
+
 ## Goals
 
-1. Plans are first-class records in Postgres with a strict schema. Not chat.
-   Not markdown blobs. Not LLM output buffered in memory.
-2. Plans are versioned. Edits produce a new version row; diffs between
-   versions are first-class and queryable.
+1. Plans are markdown files under `.codebuddy/plans/`. One file per plan.
+   Front-matter carries the structured fields; the body carries the prose
+   goal and approach.
+2. Plans are versioned by **git**, not by an in-database version column. A
+   plan's history is `git log .codebuddy/plans/pln_<id>.md`.
 3. Plans have an explicit lifecycle: `draft → approved → executing →
-   complete | abandoned`. Each state transition is auditable.
+   complete | abandoned`. The current status is the `status:` field in the
+   front-matter; transitions rewrite the file atomically.
 4. Plans are addressable through MCP so any agent in any MCP-aware client
    can `plan_current` at the top of every turn and never lose context.
 5. The plan generator is pluggable — `DefaultPlanGenerator` calls the LLM
    provider, but a project can ship a custom generator (e.g., one that
    refuses to write plans that touch `auth/`).
+6. Concurrent transitions are race-safe via filesystem locks
+   (`proper-lockfile`), not row-level Postgres locks.
 
 ## Non-goals (v0.2)
 
@@ -49,7 +57,7 @@ duck or smear across chat:
   edits files directly in this proposal.
 - No UI in v0.2. The plan is created and edited through the CLI and the
   developer's text editor (`$EDITOR`). The workspace UI consumes the same
-  data later; nothing in the schema is UI-specific.
+  files later; nothing in the schema is UI-specific.
 - No "multi-plan" or branching plans. One active plan per namespace at a
   time. Concurrency is a v0.3 problem.
 - No automatic plan generation from raw chat history. The developer kicks
@@ -63,16 +71,16 @@ duck or smear across chat:
 codebuddy plan new "Add OAuth login flow with Google as the first provider"
 
 # List plans in this namespace
-codebuddy plan list                          # active drafts + last 10 closed
+codebuddy plan list                          # active + last 10 closed
 codebuddy plan list --status approved
 codebuddy plan list --all
 
-# Show a single plan as formatted markdown
+# Show a single plan
 codebuddy plan show <id>
-codebuddy plan show <id> --version 2
+codebuddy plan show <id> --version <commit-sha>
 
-# Compare versions
-codebuddy plan diff <id> --from 1 --to 2
+# Compare versions via git
+codebuddy plan diff <id> --from HEAD~3 --to HEAD
 
 # Promote a plan
 codebuddy plan approve <id>
@@ -88,16 +96,16 @@ Through MCP, agents see four tools registered alongside the memory tools:
 
 ```
 plan_current({})
-  -> { plan: PlanSpec | null }            // the one in 'approved' or 'executing' state
+  -> { plan: PlanSpec | null }            // the file with 'approved' or 'executing' status
 
 plan_create({ brief, agentId? })
-  -> { id, version, status: 'draft' }
+  -> { id, path, status: 'draft' }
 
 plan_amend({ id, patch, agentId? })
-  -> { id, version }                       // creates a new version row
+  -> { id, path, status }                  // rewrites the file atomically
 
 plan_status({ id, status, commitSha?, notes? })
-  -> { id, status }                        // transitions through the lifecycle
+  -> { id, path, status }                  // transitions through the lifecycle
 ```
 
 `plan_current` is the load-bearing one. An agent's system prompt instructs
@@ -107,134 +115,166 @@ write one before substantive code changes.
 
 ## Architecture
 
-### Plan schema
+### File layout
+
+```
+<repo>/
+└── .codebuddy/
+    └── plans/
+        ├── pln_01jc4ww4n6q7g3kc8x9wq4kfn2.md
+        ├── pln_01jc4xa7k8m1...md
+        └── .locks/                       # transient; gitignored
+            └── pln_01jc4ww4n6q7g3kc8x9wq4kfn2.md.lock
+```
+
+`.locks/` is created on demand by `proper-lockfile` and added to the
+gitignore generated by `codebuddy init`. Lock files are stale-collected
+after 30 seconds.
+
+### Plan file format
+
+```markdown
+---
+id: pln_01jc4ww4n6q7g3kc8x9wq4kfn2
+namespace: pathway
+title: Add OAuth login flow
+status: draft
+brief: "Add OAuth login flow with Google as the first provider"
+filesToTouch:
+  - path: src/auth/oauth.ts
+    action: create
+    notes: Provider-agnostic OAuth handler
+  - path: src/api/login.ts
+    action: edit
+    notes: Wire the new handler in
+testsToAdd:
+  - path: src/auth/oauth.test.ts
+    description: Happy path + signature validation
+outOfScope:
+  - Persisting refresh tokens
+  - Logout flow
+risks:
+  - Google may rate-limit on first deploy
+createdAt: 2026-06-21T08:21:00Z
+createdByAgent: claude
+approvedAt: null
+executingAt: null
+completedAt: null
+abandonedAt: null
+commitSha: null
+abandonReason: null
+---
+
+# Goal
+
+Allow users to sign in with a Google account so we can onboard the first
+private-preview cohort without standing up our own credential store.
+
+# Approach
+
+1. Introduce `OAuthProvider` interface in `src/auth/oauth.ts` with
+   `start()`, `callback()`, `validate()`.
+2. Implement Google via `@google/oauth-handler`.
+3. Mount `/oauth/google/start` and `/oauth/google/callback` in
+   `src/api/login.ts`.
+4. Persist user sessions in the existing `sessions` table (no schema
+   change).
+5. Add fixture-based tests for the happy path and signature mismatch.
+
+# Notes
+
+(developer-written; freeform; ignored by tooling)
+```
+
+Properties:
+
+- `id` is a ULID and is **the filename minus extension**. Renaming the file
+  is a non-event; the `id` is canonical.
+- `status` is the source of truth for lifecycle state. The other
+  `*At` fields are timestamps that get filled in as transitions happen.
+- Front-matter is parsed with `gray-matter`, validated with Zod. Invalid
+  files surface as errors; they are not silently coerced.
+- The H1 section names (`Goal`, `Approach`, `Notes`) are conventions, not
+  required structure. The CLI's `plan show` highlights them.
+
+### TypeScript types
 
 ```ts
 type PlanSpec = {
-  id: string;                            // pln_<ulid>
-  namespaceId: string;
-  title: string;                         // 1-line summary
-  brief: string;                         // original developer ask
+  id: string;
+  namespace: string;
+  title: string;
   status: "draft" | "approved" | "executing" | "complete" | "abandoned";
+  brief: string;
 
-  // Mutable across versions
-  goal: string;                          // 2-3 sentences, written tone
-  approach: string;                      // structured markdown
   filesToTouch: PlannedFile[];
   testsToAdd: PlannedTest[];
-  outOfScope: string[];                  // explicit non-goals for this plan
-  risks: string[];                       // free-text caveats
+  outOfScope: string[];
+  risks: string[];
 
-  // Immutable per row
-  version: number;
-  createdAt: string;
+  createdAt: string;          // ISO 8601
   createdByAgent: string | null;
+  approvedAt: string | null;
+  executingAt: string | null;
+  completedAt: string | null;
+  abandonedAt: string | null;
+  commitSha: string | null;
+  abandonReason: string | null;
+
+  // body of the markdown file, after front-matter
+  body: string;
 };
 
 type PlannedFile = {
-  path: string;                          // repo-relative POSIX
+  path: string;
   action: "create" | "edit" | "delete";
-  notes: string;                         // why this file
+  notes: string;
 };
 
 type PlannedTest = {
-  path: string;                          // repo-relative POSIX, e.g. "src/auth/oauth.test.ts"
+  path: string;
   description: string;
 };
 ```
 
-The schema is deliberately small. It is harder to argue with five required
-fields than to argue with a half-page of free-form text. The `approach`
-field carries the prose; everything else is structured so the Risk panel
-(Proposal 03) can iterate over `filesToTouch` and compute blast radius.
+### Database role
 
-### Database tables
+Per Proposal 00, the DB holds a derived index, not the plan content.
 
 ```sql
-create table plans (
-  id                text primary key,
-  namespace_id      text not null references namespaces(id) on delete cascade,
-  title             text not null,
-  brief             text not null,
-  status            text not null default 'draft',
-  current_version   integer not null default 1,
-  created_at        timestamptz not null default now(),
-  approved_at       timestamptz,
-  executing_at      timestamptz,
-  completed_at      timestamptz,
-  abandoned_at      timestamptz,
-  commit_sha        text,
-  abandon_reason    text,
-  created_by_agent  text,
-  index (namespace_id, status, created_at desc)
-);
-
-create table plan_versions (
-  id               text primary key,
-  plan_id          text not null references plans(id) on delete cascade,
-  version          integer not null,
-  goal             text not null,
-  approach         text not null,
-  files_to_touch   jsonb not null,
-  tests_to_add     jsonb not null,
-  out_of_scope     text[] not null default '{}',
-  risks            text[] not null default '{}',
-  created_at       timestamptz not null default now(),
-  created_by_agent text,
-  unique (plan_id, version)
+create table plan_index (
+  id              text primary key,             -- pln_<ulid>
+  namespace_id    text not null references namespaces(id) on delete cascade,
+  path            text not null,                -- repo-relative .md path
+  status          text not null,
+  title           text not null,
+  brief           text not null,
+  created_at      timestamptz not null,
+  approved_at     timestamptz,
+  executing_at    timestamptz,
+  completed_at    timestamptz,
+  abandoned_at    timestamptz,
+  commit_sha      text,
+  file_hash       text not null,                -- sha256 of file content
+  indexed_at      timestamptz not null default now(),
+  index (namespace_id, status, created_at desc),
+  index (namespace_id, commit_sha)
 );
 ```
 
 Reasoning:
 
-- `plans` carries identity + lifecycle. `plan_versions` carries content.
-  Status transitions never rewrite a version; they always create a new one
-  if the content changed.
-- A single active plan per namespace is enforced by an application-level
-  check, not a partial unique index. Reason: race conditions in the
-  application path are easier to recover from than constraint violations
-  bubbling out through MCP errors.
-- The `commit_sha` column is the bridge to git. Completing a plan without
-  a commit is allowed (for plans that are decisions, not code) but the
-  CLI warns about it.
+- `plan_index` is rebuildable by walking `.codebuddy/plans/*.md` and
+  parsing each file. The `reindex` contract from Proposal 00 covers it.
+- `file_hash` makes incremental reindex cheap — unchanged file ⇒ skip.
+- "One active plan per namespace" is enforced by querying this table
+  before transitioning, not by a Postgres constraint. The check holds the
+  filesystem lock during the read-then-write window.
 
-### Plan generator
+The `plan_versions` table from the previous draft is removed. Version
+history is `git log`.
 
-```ts
-type PlanGenerator = {
-  generate(input: PlanGenerateInput): Promise<DraftPlan>;
-  amend(input: PlanAmendInput): Promise<DraftPlan>;
-};
-
-type PlanGenerateInput = {
-  namespace: string;
-  brief: string;
-  recentMemory: PlannedContext;   // pulled from CodeBuddy's recall
-  repoSnapshot?: RepoSnapshot;    // optional, lands with Proposal 01
-};
-```
-
-`DefaultPlanGenerator` calls the configured LLM provider with a system
-prompt that requires the model to return a JSON object matching `PlanSpec`
-minus the lifecycle fields. The output is validated with Zod; malformed
-output is rejected and retried once with the validation error appended to
-the prompt. After two failures the user is shown the raw output and asked
-to edit it manually.
-
-The generator is registered in `src/plan/generator.ts` and selectable via
-`.codebuddy/config.json`:
-
-```json
-{
-  "plan": {
-    "generator": "default",
-    "model": "meta-llama/Llama-3.2-3B-Instruct",
-    "maxFiles": 20
-  }
-}
-```
-
-### Lifecycle and locking
+### Lifecycle and concurrency
 
 ```
                   ┌──── approve ────┐
@@ -252,161 +292,198 @@ The generator is registered in `src/plan/generator.ts` and selectable via
                        complete         abandoned
 ```
 
-- `draft` and `executing` can both be amended. Amending creates a new
-  `plan_versions` row and bumps `plans.current_version`.
-- Transitions are guarded by row-level Postgres locks
-  (`select ... for update`) inside the `forSession` advisory lock pattern
-  already used by `MemoryRepository`. No two MCP clients can race a
-  status change.
+- `draft` and `executing` can both be amended.
+- Amending rewrites the file with new front-matter; git stores the diff.
+- Transitions acquire a lock on `.codebuddy/plans/.locks/<id>.md.lock`
+  via `proper-lockfile`, then read-modify-write atomically (write to
+  `.tmp`, `fsync`, `rename`).
+- A second concurrent transition waits on the lock; if it can't acquire
+  within 5 seconds it fails fast with a clear error.
 
-### Integration with the CLI
+Approving a plan requires no other plan in this namespace to be in
+`approved` or `executing`. The check happens inside the lock window.
+Same for transitioning `draft → executing`.
 
-The CLI uses `$EDITOR` (defaulting to `vi`) for plan editing. Flow:
+### Generator
 
-1. `codebuddy plan new "<brief>"` calls the generator, writes the draft
-   to `~/.codebuddy/cache/plans/pln_<id>.v1.md` as a markdown rendering
-   of `PlanSpec`.
-2. The editor opens that file. The developer edits freely.
-3. On editor exit, the markdown is parsed back into `PlanSpec`. Parse
-   errors surface inline; the developer is given the choice to re-open
-   the file or discard the edits.
-4. The resulting spec is written as a new `plan_versions` row.
+```ts
+type PlanGenerator = {
+  generate(input: PlanGenerateInput): Promise<DraftPlan>;
+  amend(input: PlanAmendInput): Promise<DraftPlan>;
+};
 
-The markdown format is round-trippable. Front-matter carries the
-structured fields:
-
-```markdown
----
-title: Add OAuth login flow
-status: draft
-version: 1
-filesToTouch:
-  - path: src/auth/oauth.ts
-    action: create
-    notes: Provider-agnostic OAuth handler
-  - path: src/api/login.ts
-    action: edit
-    notes: Wire the new handler in
-testsToAdd:
-  - path: src/auth/oauth.test.ts
-    description: Happy path + signature validation
-outOfScope:
-  - Persisting refresh tokens
-  - Logout flow
-risks:
-  - Google may rate-limit on first deploy
----
-
-# Goal
-
-Allow users to sign in with a Google account...
-
-# Approach
-
-1. Add an `OAuthProvider` interface...
+type PlanGenerateInput = {
+  namespace: string;
+  brief: string;
+  recentMemory: PlannedContext;    // pulled from CodeBuddy's recall
+  repoSnapshot?: RepoSnapshot;     // optional, lands with Proposal 01
+};
 ```
+
+`DefaultPlanGenerator` calls the configured LLM provider with a system
+prompt that requires the model to return a JSON object matching the
+front-matter schema. Output is validated with Zod; malformed output is
+rejected and retried once with the validation error appended to the
+prompt. After two failures the user is shown the raw output and asked
+to edit the file manually.
+
+Generator config in `.codebuddy/config.json`:
+
+```json
+{
+  "plan": {
+    "generator": "default",
+    "model": "meta-llama/Llama-3.2-3B-Instruct",
+    "maxFiles": 20
+  }
+}
+```
+
+### CLI integration
+
+Flow for `plan new`:
+
+1. Generator produces a draft `PlanSpec`.
+2. CLI writes `.codebuddy/plans/pln_<id>.md` with `status: draft`.
+3. Updates `plan_index`.
+4. Opens `$EDITOR` (defaulting to `vi`) on the file.
+5. On editor exit, re-parses the file with Zod. Parse errors surface
+   inline; the developer can re-open the file or discard.
+6. Re-runs the reindex for that single file.
+
+`approve`, `complete`, `abandon`, `amend` all:
+
+1. Acquire the file lock.
+2. Read the current file.
+3. Validate front-matter.
+4. Mutate the relevant fields + timestamps.
+5. Write atomically (tmp + rename).
+6. Update `plan_index`.
+7. Release the lock.
 
 ## Implementation phases
 
-### Phase 1 — schema + repository methods (1 day)
+### Phase 1 — schema + readers (1 day)
 
-- `src/db/schema-plan.ts` with the two tables.
+- `src/db/schema-plan.ts` with the single `plan_index` table.
 - Drizzle migration.
-- Repository methods on `MemoryRepository`:
-  - `createPlan(input)`
-  - `getPlan(id, version?)`
+- `src/plan/repository.ts`: file walker + reader. Returns `PlanSpec[]`.
+- `InMemoryPlanRepository` for tests (returns whatever was registered).
+- Repository methods:
   - `listPlans(namespaceId, filter)`
-  - `appendPlanVersion(id, content)`
-  - `transitionPlan(id, status, metadata)`
-- `InMemoryMemoryRepository` implementations (used by tests).
+  - `getPlan(id)`
+  - `findByStatus(namespaceId, status[])`
+  - `reindexPath(path)` — single-file reindex of the index table
 
-### Phase 2 — markdown round-trip (1 day)
+### Phase 2 — front-matter round-trip (1 day)
 
 - `src/plan/markdown.ts`: `toMarkdown(spec)` and `fromMarkdown(text)`.
-- Properties-based tests under `src/plan/__tests__/markdown.property.test.ts`
+- `gray-matter` for parsing, custom serializer for stability (yaml-stringify
+  with sorted keys so git diffs are minimal).
+- Property tests under `src/plan/__tests__/markdown.property.test.ts`
   using `fast-check`: round-trip a generated spec, assert structural
-  equality.
+  equality with the original.
 
-### Phase 3 — default generator + LLM call (2 days)
+### Phase 3 — file lock + atomic write (half day)
+
+- `src/plan/storage.ts`: `withPlanLock(id, fn)` wrapping `proper-lockfile`.
+- `writePlanFile(spec)`: lock + tmp + fsync + rename.
+- Tests: spawn N concurrent transitions in-process; assert only one
+  succeeds, others get a clear conflict error.
+
+### Phase 4 — default generator (2 days)
 
 - `src/plan/generator.ts`: `DefaultPlanGenerator` calling the existing
   provider layer.
-- System prompt lives in `src/plan/prompts/system.md` (templated, not
-  inlined as a string).
-- Zod validation against `PlanSpec`. One retry on validation failure.
+- System prompt in `src/plan/prompts/system.md` (templated file, not
+  inline string).
+- Zod validation against the front-matter schema. One retry on
+  validation failure with the schema error appended.
 - Tests: mock the provider, assert that malformed JSON triggers a retry
-  and that the final fallback opens the editor with the raw output.
+  and that the final fallback opens the editor with the raw output
+  preserved.
 
-### Phase 4 — CLI surface (2 days)
+### Phase 5 — CLI surface (2 days)
 
 - `src/cli/commands/plan.ts` with all subcommands above.
-- Editor integration via Node's `spawn(process.env.EDITOR ?? 'vi', [path])`.
+- Editor integration via `spawn(process.env.EDITOR ?? 'vi', [path])`.
 - Coloured output via `picocolors`, status banners via `@clack/prompts`.
+- `plan diff <id>` shells to `git diff` against the plan file.
 - Manual smoke test on macOS + Linux + WSL.
 
-### Phase 5 — MCP tools (1 day)
+### Phase 6 — MCP tools (1 day)
 
 - `src/mcp/tools/plan.ts` with the four tools listed above.
-- Each tool returns content small enough to fit in any reasonable context
-  window — the plan is at most ~2-4 KB of text.
+- Tools return `PlanSpec` shape; body included up to 8 KB (truncated
+  with a marker beyond that).
 - Tests in `src/mcp/tools/plan.test.ts` against the in-memory repository.
 
-### Phase 6 — git completion hook (1 day)
+### Phase 7 — git completion hook (1 day)
 
-- `src/plan/git.ts`: on `plan complete`, validate the commit SHA exists,
-  read its message, attach the message to the plan record.
-- Optional `git note` written to the commit linking back to the plan ID.
-  Toggled by `.codebuddy/config.json#plan.writeGitNote`.
+- `src/plan/git.ts`: on `plan complete`, validate the commit SHA
+  exists, read its message, attach it to the plan front-matter.
+- Optional `git note add --ref=codebuddy-plan` linking the commit back
+  to the plan id. Toggled by `.codebuddy/config.json#plan.writeGitNote`.
 
-### Phase 7 — `plan_current` system-prompt snippet (half day)
+### Phase 8 — `plan_current` system-prompt snippet (half day)
 
-- `codebuddy plan inject` prints a system-prompt snippet the developer can
-  paste into their MCP client's settings:
-  > "At the top of every turn, call `plan_current`. If a plan exists, work
-  > against the structured spec. If not, ask the developer to write one."
-- Documented in `docs/proposals/02-plan-panel.md` (this file) and in the
-  README quickstart.
+- `codebuddy plan inject` prints a system-prompt snippet the developer
+  can paste into their MCP client's settings:
+  > "At the top of every turn, call `plan_current`. If a plan exists,
+  > work against the structured spec. If not, ask the developer to
+  > write one."
+- Documented in this proposal and in the README quickstart.
 
 ## Open questions
 
 1. **Plan templates**: do we ship a small set of templates (refactor,
    bug fix, feature, spike) that bias the generator? Probably yes, but
    not in v0.2 — too much surface area to design without user signal.
-2. **Per-plan recall budget**: when the agent loads `plan_current`, should
-   CodeBuddy also auto-recall memory tagged to the plan ID? Useful but
-   couples the two surfaces; defer to v0.3 once usage tells us if the
-   coupling matters.
+2. **Per-plan recall budget**: when the agent loads `plan_current`,
+   should CodeBuddy also auto-recall memory tagged to the plan ID?
+   Useful but couples the two surfaces; defer to v0.3.
 3. **Plan acceptance criteria**: should `complete` require all
-   `filesToTouch` paths to exist (or not, for deletes)? This is a strong
+   `filesToTouch` paths to exist (or not, for deletes)? Strong
    guarantee but punishing for plans that genuinely change scope.
    v0.2 warns but does not block.
+4. **Should the body section be free-form markdown or sub-fielded?**
+   Free-form for v0.2. If the workspace UI grows to render the body in
+   a structured way later, we add optional sub-sections behind heading
+   conventions (`# Goal`, `# Approach`, `# Notes`) and keep
+   backward-compat.
 
 ## Rejected alternatives
 
-- **Plans as markdown files in `.codebuddy/plans/`**: easier to grep, but
-  no versioning, no schema validation, no MCP exposure, no way to
-  enforce "one active plan." Rejected because the discipline only works
-  if the schema is enforced.
-- **Plans inside the existing `summary` write type**: piggybacking on
-  the memory schema looked tempting (no new tables). Rejected because
-  plans have a lifecycle (`approved`, `executing`) that doesn't fit the
-  memory model, and recall would surface stale plans as if they were
-  facts.
-- **Generator as a one-shot LLM call without validation**: validating
-  the output against `PlanSpec` adds latency and a retry path, but the
-  alternative is shipping malformed plans to the user. The cost is
-  worth it.
+- **Plans as Postgres rows** (the previous draft of this doc). Loses
+  reviewability in PRs, breaks compatibility with the CLAUDE.md
+  ecosystem, makes the database load-bearing for user-authored content.
+  Superseded by Proposal 00.
+- **One markdown file per plan version**. Considered. Rejected because
+  `git log` already gives us version history without proliferating
+  files, and listing plans becomes painful with N×V files instead of N.
+- **JSON files instead of markdown**. Machine-cleaner but hostile to
+  humans editing in their editor and unfriendly to GitHub's renderer.
+  Markdown with YAML front-matter is the de facto standard for this
+  kind of thing.
+- **One generator output, no validation/retry**. Validating costs
+  latency and adds a retry path; the alternative is shipping malformed
+  files to the user. Worth the cost.
 
 ## Definition of done for v0.2
 
-- `codebuddy plan new "<brief>"` produces a draft plan, opens the editor,
-  saves on exit, and `codebuddy plan show <id>` re-renders it.
-- `codebuddy plan diff <id> --from 1 --to 2` shows a coloured per-field
-  diff.
-- `plan_current` returns the active plan (or null) over MCP and is callable
-  from Claude Desktop with a registered codebuddy entry.
-- A completed plan stores the commit SHA and surfaces it in `plan show`.
+- `codebuddy plan new "<brief>"` produces a draft markdown file under
+  `.codebuddy/plans/`, opens the editor, saves on exit, and
+  `codebuddy plan show <id>` re-renders it from the file.
+- `codebuddy plan diff <id>` shells to `git diff` and shows a coloured
+  diff between versions of the plan file.
+- `plan_current` returns the active plan (or null) over MCP and is
+  callable from Claude Desktop with a registered codebuddy entry.
+- A completed plan stores the commit SHA in its front-matter and
+  surfaces it in `plan show`.
 - Round-trip property tests pass on 200+ random `PlanSpec`s.
-- Status transitions are race-safe under concurrent MCP clients (test:
+- Status transitions are race-safe under concurrent MCP clients:
   spawn two `plan approve` calls against the same plan; exactly one
-  succeeds, the other returns a clear conflict error).
+  succeeds, the other returns a clear conflict error within 5 seconds.
+- Wiping the database and running `codebuddy reindex` rebuilds
+  `plan_index` from the files; subsequent `plan list` returns the
+  same results as before the wipe.
