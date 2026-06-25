@@ -99,7 +99,33 @@ describe("migrateMemoryToFiles", () => {
       namespace: "research-agent",
       write: true,
     });
-    expect(second.facts).toMatchObject({ found: 1, existing: 1, toWrite: 0 });
-    expect(second.summaries).toMatchObject({ found: 1, existing: 1, toWrite: 0 });
+    expect(second.facts).toMatchObject({ found: 1, existing: 1, toWrite: 0, conflicts: 0 });
+    expect(second.summaries).toMatchObject({ found: 1, existing: 1, toWrite: 0, conflicts: 0 });
+  });
+
+  it("reports same-id content conflicts without overwriting the file", async () => {
+    const { repository, store } = await fixture();
+    await store.writeFact({
+      id: "fact_01abc",
+      namespace: "research-agent",
+      subject: "deployment.region",
+      predicate: "is",
+      object: "us-east-1",
+      confidence: 1,
+      createdAt: new Date().toISOString(),
+      createdByAgent: null,
+      sourceInteractionId: null,
+      sourceDeleted: false,
+      content: "Use us-east-1.",
+    });
+    const result = await migrateMemoryToFiles({
+      repository,
+      store,
+      namespace: "research-agent",
+      write: true,
+    });
+    expect(result.facts).toMatchObject({ found: 1, existing: 0, toWrite: 0, conflicts: 1 });
+    expect(result.conflicts[0]).toMatchObject({ kind: "fact", id: "fact_01abc" });
+    expect((await store.readFact("fact_01abc")).content).toBe("Use us-east-1.");
   });
 });
