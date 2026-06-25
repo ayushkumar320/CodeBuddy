@@ -13,7 +13,7 @@ import {
   generateSessionId,
   generateUlid,
 } from "./ids.js";
-import type { FactFile, MemoryFileStore } from "./memory-file-store.js";
+import type { FactFile, MemoryFileStore, SummaryFile } from "./memory-file-store.js";
 import type {
   AuditEntry,
   FactInsert,
@@ -301,7 +301,10 @@ export class CodeBuddy {
     return { ok: false, entityType: "unknown" };
   }
 
-  async reindexFacts(): Promise<{ scanned: number; imported: number; deduplicated: number }> {
+  async reindexMemory(): Promise<{
+    facts: { scanned: number; imported: number; deduplicated: number };
+    summaries: { scanned: number; imported: number; deduplicated: number };
+  }> {
     const namespaceId = this.requireNamespaceId();
     if (!this.memoryFileStore) {
       throw new Error("Fact reindexing requires a repository-rooted MemoryFileStore.");
@@ -315,8 +318,28 @@ export class CodeBuddy {
       if (result.deduplicated) deduplicated += 1;
       else imported += 1;
     }
+    const summaries = await this.memoryFileStore.listSummaries();
+    let summariesImported = 0;
+    let summariesDeduplicated = 0;
+    for (const summary of summaries) {
+      if (summary.namespace !== this.config.namespace) continue;
+      const result = await this.importSummaryFile(namespaceId, summary);
+      if (result.deduplicated) summariesDeduplicated += 1;
+      else summariesImported += 1;
+    }
     this.worker.notify();
-    return { scanned: facts.length, imported, deduplicated };
+    return {
+      facts: { scanned: facts.length, imported, deduplicated },
+      summaries: {
+        scanned: summaries.length,
+        imported: summariesImported,
+        deduplicated: summariesDeduplicated,
+      },
+    };
+  }
+
+  async reindexFacts(): Promise<{ scanned: number; imported: number; deduplicated: number }> {
+    return (await this.reindexMemory()).facts;
   }
 
   private requireNamespaceId(): string {
@@ -417,7 +440,28 @@ export class CodeBuddy {
       tokenCount,
       ...(input.agentId !== undefined ? { createdByAgent: input.agentId } : {}),
     };
-    return this.repo.writeSummary({ summary, embedding, audit });
+    const result = await this.repo.writeSummary({ summary, embedding, audit });
+    if (this.memoryFileStore) {
+      if (result.deduplicated) {
+        try {
+          await this.memoryFileStore.readSummary(result.id);
+          return result;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      }
+      await this.memoryFileStore.writeSummary({
+        id: result.id,
+        namespace: this.config.namespace,
+        sessionId: result.sessionId,
+        version: summary.version ?? 1,
+        tokenCount: summary.tokenCount,
+        createdAt: new Date().toISOString(),
+        createdByAgent: input.agentId ?? null,
+        content: summary.content,
+      });
+    }
+    return result;
   }
 
   private async importFactFile(namespaceId: string, file: FactFile): Promise<WriteResult> {
@@ -447,6 +491,35 @@ export class CodeBuddy {
         namespaceId,
         action: "remember",
         entityType: "fact",
+        entityId: file.id,
+        metadata: { source: "reindex", path: file.path },
+      },
+    });
+  }
+
+  private async importSummaryFile(namespaceId: string, file: SummaryFile): Promise<WriteResult> {
+    return this.repo.writeSummary({
+      summary: {
+        id: file.id,
+        namespaceId,
+        sessionId: file.sessionId,
+        content: file.content,
+        version: file.version,
+        tokenCount: file.tokenCount,
+        ...(file.createdByAgent ? { createdByAgent: file.createdByAgent } : {}),
+      },
+      embedding: {
+        id: generateEntityId("emb"),
+        namespaceId,
+        ownerType: "summary",
+        ownerId: file.id,
+        embeddingModel: DEFAULT_EMBEDDING_MODELS[0]?.id ?? "unknown",
+      },
+      audit: {
+        id: generateEntityId("aud"),
+        namespaceId,
+        action: "remember",
+        entityType: "summary",
         entityId: file.id,
         metadata: { source: "reindex", path: file.path },
       },

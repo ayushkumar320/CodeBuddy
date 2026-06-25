@@ -7,8 +7,15 @@ export {
   loadRuntimeConfig,
   redactSecrets,
 } from "./core/config-file.js";
-export type { FactFile, FactFileWrite } from "./core/memory-file-store.js";
+export type {
+  FactFile,
+  FactFileWrite,
+  SummaryFile,
+  SummaryFileWrite,
+} from "./core/memory-file-store.js";
 export { MemoryFileStore } from "./core/memory-file-store.js";
+export type { MigrationPreview } from "./core/migrate-to-files.js";
+export { migrateMemoryToFiles } from "./core/migrate-to-files.js";
 export {
   createRuntime,
   decodeFactCursor,

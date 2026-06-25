@@ -183,6 +183,45 @@ describe("remember", () => {
     }
   });
 
+  it("dual-writes and rebuilds summaries from Markdown", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codebuddy-summary-reindex-"));
+    try {
+      const store = new MemoryFileStore(root);
+      const firstRepository = new InMemoryMemoryRepository();
+      const firstSdk = new CodeBuddy(baseConfig, {
+        repository: firstRepository,
+        provider: mockProvider(),
+        memoryFileStore: store,
+      });
+      await firstSdk.init();
+      const remembered = await firstSdk.remember({
+        sessionId: "sess_summary",
+        content: "OAuth design was completed.",
+        type: "summary",
+      });
+      expect((await store.readSummary(remembered.id)).sessionId).toBe("sess_summary");
+      await firstSdk.shutdown();
+
+      const rebuiltRepository = new InMemoryMemoryRepository();
+      const rebuiltSdk = new CodeBuddy(baseConfig, {
+        repository: rebuiltRepository,
+        provider: mockProvider(),
+        memoryFileStore: store,
+      });
+      await rebuiltSdk.init();
+      const result = await rebuiltSdk.reindexMemory();
+      expect(result.summaries).toEqual({ scanned: 1, imported: 1, deduplicated: 0 });
+      const rebuiltNamespace = await rebuiltRepository.getNamespaceByName("research-agent");
+      if (!rebuiltNamespace) throw new Error("Expected rebuilt namespace.");
+      expect(
+        await rebuiltRepository.getLatestSummary(rebuiltNamespace.id, "sess_summary"),
+      ).toMatchObject({ id: remembered.id, content: "OAuth design was completed." });
+      await rebuiltSdk.shutdown();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("creates the embedding row as pending inside the write", async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => {

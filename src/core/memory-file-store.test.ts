@@ -46,6 +46,26 @@ describe("MemoryFileStore", () => {
     });
   });
 
+  it("round-trips a Markdown summary", async () => {
+    const store = new MemoryFileStore(await temporaryRoot());
+    await store.writeSummary({
+      id: "sum_01abc",
+      namespace: "research-agent",
+      sessionId: "sess_1",
+      version: 2,
+      tokenCount: 12,
+      createdAt: "2026-06-25T10:00:00.000Z",
+      createdByAgent: "codex",
+      content: "Settled on Markdown-backed memory.",
+    });
+    await expect(store.readSummary("sum_01abc")).resolves.toMatchObject({
+      id: "sum_01abc",
+      sessionId: "sess_1",
+      version: 2,
+      content: "Settled on Markdown-backed memory.",
+    });
+  });
+
   it("rejects invalid fact ids", async () => {
     const store = new MemoryFileStore(await temporaryRoot());
     await expect(

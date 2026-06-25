@@ -8,6 +8,7 @@ import type {
   FactInsert,
   InteractionInsert,
   ListedFact,
+  ListedSummary,
   MemoryRepository,
   MemoryStats,
   ModelCallEntry,
@@ -170,6 +171,15 @@ export class InMemoryMemoryRepository implements MemoryRepository {
     embedding: PendingEmbeddingInsert;
     audit: AuditEntry;
   }): Promise<WriteResult> {
+    const existing = this.summaries.get(input.summary.id);
+    if (existing) {
+      return {
+        id: existing.id,
+        embeddingId: "",
+        sessionId: existing.sessionId,
+        deduplicated: true,
+      };
+    }
     this.summaries.set(input.summary.id, {
       ...input.summary,
       createdAt: Date.now(),
@@ -382,6 +392,7 @@ export class InMemoryMemoryRepository implements MemoryRepository {
         id: row.id,
         content: row.content,
         confidence: 1,
+        sourceInteractionId: row.sourceInteractionId ?? null,
         sourceDeleted: row.sourceDeleted,
         createdAt: new Date(row.createdAt),
       }));
@@ -437,7 +448,24 @@ export class InMemoryMemoryRepository implements MemoryRepository {
         object: row.object,
         content: row.content,
         confidence: 1,
+        sourceInteractionId: row.sourceInteractionId ?? null,
         sourceDeleted: row.sourceDeleted,
+        createdByAgent: row.createdByAgent ?? null,
+        createdAt: new Date(row.createdAt),
+      }));
+  }
+
+  async listSummaries(input: { namespaceId: string; limit: number }): Promise<ListedSummary[]> {
+    return Array.from(this.summaries.values())
+      .filter((row) => row.namespaceId === input.namespaceId)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, input.limit)
+      .map((row) => ({
+        id: row.id,
+        sessionId: row.sessionId,
+        content: row.content,
+        version: row.version ?? 1,
+        tokenCount: row.tokenCount,
         createdByAgent: row.createdByAgent ?? null,
         createdAt: new Date(row.createdAt),
       }));

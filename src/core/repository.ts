@@ -33,6 +33,7 @@ export type SummaryInsert = {
   namespaceId: string;
   sessionId: string;
   content: string;
+  version?: number | undefined;
   tokenCount: number;
   createdByAgent?: string | undefined;
 };
@@ -140,7 +141,18 @@ export type ListedFact = {
   object: string;
   content: string;
   confidence: number;
+  sourceInteractionId: string | null;
   sourceDeleted: boolean;
+  createdByAgent: string | null;
+  createdAt: Date;
+};
+
+export type ListedSummary = {
+  id: string;
+  sessionId: string;
+  content: string;
+  version: number;
+  tokenCount: number;
   createdByAgent: string | null;
   createdAt: Date;
 };
@@ -243,6 +255,7 @@ export type MemoryRepository = {
     limit: number;
     cursor?: FactCursor;
   }): Promise<ListedFact[]>;
+  listSummaries(input: { namespaceId: string; limit: number }): Promise<ListedSummary[]>;
   listNamespaces(): Promise<NamespaceSummary[]>;
   getAgentWriteBreakdown(namespaceId?: string): Promise<AgentWriteBreakdown[]>;
   getStats(namespaceId?: string): Promise<MemoryStats>;

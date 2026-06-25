@@ -199,11 +199,26 @@ export class PostgresMemoryRepository implements MemoryRepository {
     audit: AuditEntry;
   }): Promise<WriteResult> {
     return this.db.transaction(async (tx) => {
+      const existing = await tx
+        .select({ id: sessionSummaries.id, sessionId: sessionSummaries.sessionId })
+        .from(sessionSummaries)
+        .where(eq(sessionSummaries.id, input.summary.id))
+        .limit(1);
+      const existingRow = existing[0];
+      if (existingRow) {
+        return {
+          id: existingRow.id,
+          embeddingId: "",
+          sessionId: existingRow.sessionId,
+          deduplicated: true,
+        };
+      }
       await tx.insert(sessionSummaries).values({
         id: input.summary.id,
         namespaceId: input.summary.namespaceId,
         sessionId: input.summary.sessionId,
         content: input.summary.content,
+        version: input.summary.version ?? 1,
         tokenCount: input.summary.tokenCount,
         createdByAgent: input.summary.createdByAgent ?? null,
       });
@@ -606,6 +621,7 @@ export class PostgresMemoryRepository implements MemoryRepository {
         object: facts.object,
         content: facts.content,
         confidence: facts.confidence,
+        sourceInteractionId: facts.sourceInteractionId,
         sourceDeleted: facts.sourceDeleted,
         createdByAgent: facts.createdByAgent,
         createdAt: facts.createdAt,
@@ -615,6 +631,26 @@ export class PostgresMemoryRepository implements MemoryRepository {
       .orderBy(desc(facts.createdAt), desc(facts.id))
       .limit(input.limit);
     return rows.map((row) => ({ ...row, confidence: Number(row.confidence ?? 1) }));
+  }
+
+  async listSummaries(input: {
+    namespaceId: string;
+    limit: number;
+  }): Promise<import("../core/repository.js").ListedSummary[]> {
+    return this.db
+      .select({
+        id: sessionSummaries.id,
+        sessionId: sessionSummaries.sessionId,
+        content: sessionSummaries.content,
+        version: sessionSummaries.version,
+        tokenCount: sessionSummaries.tokenCount,
+        createdByAgent: sessionSummaries.createdByAgent,
+        createdAt: sessionSummaries.createdAt,
+      })
+      .from(sessionSummaries)
+      .where(eq(sessionSummaries.namespaceId, input.namespaceId))
+      .orderBy(desc(sessionSummaries.createdAt))
+      .limit(input.limit);
   }
 
   async listNamespaces(): Promise<NamespaceSummary[]> {

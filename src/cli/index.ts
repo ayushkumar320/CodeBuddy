@@ -2,6 +2,8 @@
 import { Command } from "commander";
 import pc from "picocolors";
 import { initConfigFile, loadRuntimeConfig, redactSecrets } from "../core/config-file.js";
+import { MemoryFileStore } from "../core/memory-file-store.js";
+import { migrateMemoryToFiles } from "../core/migrate-to-files.js";
 import { createRuntime, inspectNamespace, listFactsPage, runDoctor } from "../core/operations.js";
 import { bootstrapDatabase } from "../db/bootstrap.js";
 import { createDatabaseClient } from "../db/client.js";
@@ -65,7 +67,7 @@ export function createCli(): Command {
       });
     });
 
-  program
+  const migrate = program
     .command("migrate")
     .description("Apply pending database migrations.")
     .action(async () => {
@@ -81,14 +83,30 @@ export function createCli(): Command {
         }
       });
     });
+  migrate
+    .command("to-files")
+    .description("Preview or write existing facts and summaries as Markdown files.")
+    .option("--write", "Write files. Without this flag the command is a dry run.")
+    .action(async (opts: { write?: boolean }) => {
+      await withRuntime(async (runtime) => {
+        const config = await loadRuntimeConfig();
+        const result = await migrateMemoryToFiles({
+          repository: runtime.repository,
+          store: new MemoryFileStore(config.projectRoot ?? process.cwd()),
+          namespace: config.namespace,
+          write: opts.write ?? false,
+        });
+        console.log(JSON.stringify(result, null, 2));
+      });
+    });
 
   program
     .command("reindex")
-    .description("Rebuild fact records and pending embeddings from Markdown files.")
-    .option("--full", "Scan every Markdown fact file.")
+    .description("Rebuild fact and summary records from Markdown files.")
+    .option("--full", "Scan every Markdown memory file.")
     .action(async (_opts: { full?: boolean }) => {
       await withRuntime(async (runtime) => {
-        console.log(JSON.stringify(await runtime.memory.reindexFacts(), null, 2));
+        console.log(JSON.stringify(await runtime.memory.reindexMemory(), null, 2));
       });
     });
 

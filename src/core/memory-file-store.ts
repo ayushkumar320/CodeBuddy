@@ -21,25 +21,47 @@ const factFrontMatterSchema = z.object({
   sourceDeleted: z.boolean(),
 });
 
+const summaryFrontMatterSchema = z.object({
+  schemaVersion: z.literal(1),
+  id: z.string().regex(/^sum_[a-z0-9]+$/),
+  namespace: z.string().min(1),
+  type: z.literal("summary"),
+  sessionId: z.string().min(1),
+  version: z.number().int().positive(),
+  tokenCount: z.number().int().nonnegative(),
+  createdAt: z.preprocess(
+    (value) => (value instanceof Date ? value.toISOString() : value),
+    z.string().datetime(),
+  ),
+  createdByAgent: z.string().nullable(),
+});
+
 export type FactFile = z.infer<typeof factFrontMatterSchema> & {
   content: string;
   path: string;
 };
 
 export type FactFileWrite = Omit<FactFile, "path" | "schemaVersion" | "type">;
+export type SummaryFile = z.infer<typeof summaryFrontMatterSchema> & {
+  content: string;
+  path: string;
+};
+export type SummaryFileWrite = Omit<SummaryFile, "path" | "schemaVersion" | "type">;
 
 export class MemoryFileStore {
   readonly repositoryRoot: string;
   readonly factsDirectory: string;
+  readonly summariesDirectory: string;
 
   constructor(repositoryRoot = process.cwd()) {
     this.repositoryRoot = resolve(repositoryRoot);
     this.factsDirectory = join(this.repositoryRoot, ".codebuddy", "memory", "facts");
+    this.summariesDirectory = join(this.repositoryRoot, ".codebuddy", "memory", "summaries");
   }
 
   async writeFact(input: FactFileWrite): Promise<string> {
     const path = this.factPath(input.id);
-    await this.prepareDirectory();
+    await this.prepareDirectory(this.factsDirectory);
     await assertNoSymlinkBetween(this.repositoryRoot, dirname(path));
 
     const frontMatter = stringifyYaml({
@@ -59,15 +81,27 @@ export class MemoryFileStore {
     const content = input.content.endsWith("\n") ? input.content : `${input.content}\n`;
     const document = `---\n${frontMatter}\n---\n${content}`;
 
-    const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-    const handle = await open(temporaryPath, "wx", 0o600);
-    try {
-      await handle.writeFile(document, "utf8");
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await rename(temporaryPath, path);
+    await writeAtomic(path, document);
+    return path;
+  }
+
+  async writeSummary(input: SummaryFileWrite): Promise<string> {
+    const path = this.summaryPath(input.id);
+    await this.prepareDirectory(this.summariesDirectory);
+    await assertNoSymlinkBetween(this.repositoryRoot, dirname(path));
+    const metadata = stringifyYaml({
+      schemaVersion: 1,
+      id: input.id,
+      namespace: input.namespace,
+      type: "summary",
+      sessionId: input.sessionId,
+      version: input.version,
+      tokenCount: input.tokenCount,
+      createdAt: input.createdAt,
+      createdByAgent: input.createdByAgent,
+    }).trimEnd();
+    const content = input.content.endsWith("\n") ? input.content : `${input.content}\n`;
+    await writeAtomic(path, `---\n${metadata}\n---\n${content}`);
     return path;
   }
 
@@ -85,7 +119,7 @@ export class MemoryFileStore {
 
   async listFacts(): Promise<FactFile[]> {
     try {
-      await this.prepareDirectory();
+      await this.prepareDirectory(this.factsDirectory);
       const entries = await readdir(this.factsDirectory, { withFileTypes: true });
       const facts: FactFile[] = [];
       for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
@@ -93,6 +127,33 @@ export class MemoryFileStore {
         facts.push(await this.readFact(join(this.factsDirectory, entry.name)));
       }
       return facts;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  async readSummary(pathOrId: string): Promise<SummaryFile> {
+    const path = pathOrId.endsWith(".md") ? this.safePath(pathOrId) : this.summaryPath(pathOrId);
+    await assertNoSymlinkBetween(this.repositoryRoot, path);
+    const parsed = parseFrontMatter(await readFile(path, "utf8"));
+    return {
+      ...summaryFrontMatterSchema.parse(parseYaml(parsed.frontMatter)),
+      content: parsed.content.trim(),
+      path,
+    };
+  }
+
+  async listSummaries(): Promise<SummaryFile[]> {
+    try {
+      await this.prepareDirectory(this.summariesDirectory);
+      const entries = await readdir(this.summariesDirectory, { withFileTypes: true });
+      const summaries: SummaryFile[] = [];
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+        summaries.push(await this.readSummary(join(this.summariesDirectory, entry.name)));
+      }
+      return summaries;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
@@ -110,6 +171,11 @@ export class MemoryFileStore {
     return this.safePath(join(this.factsDirectory, `${id}.md`));
   }
 
+  private summaryPath(id: string): string {
+    if (!/^sum_[a-z0-9]+$/.test(id)) throw new Error(`Invalid summary id: ${id}`);
+    return this.safePath(join(this.summariesDirectory, `${id}.md`));
+  }
+
   private safePath(path: string): string {
     const absolute = resolve(path);
     const relativePath = relative(this.repositoryRoot, absolute);
@@ -119,10 +185,22 @@ export class MemoryFileStore {
     return absolute;
   }
 
-  private async prepareDirectory(): Promise<void> {
-    await assertNoSymlinkBetween(this.repositoryRoot, dirname(this.factsDirectory));
-    await mkdir(this.factsDirectory, { recursive: true, mode: 0o700 });
+  private async prepareDirectory(directory: string): Promise<void> {
+    await assertNoSymlinkBetween(this.repositoryRoot, dirname(directory));
+    await mkdir(directory, { recursive: true, mode: 0o700 });
   }
+}
+
+async function writeAtomic(path: string, document: string): Promise<void> {
+  const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  const handle = await open(temporaryPath, "wx", 0o600);
+  try {
+    await handle.writeFile(document, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await rename(temporaryPath, path);
 }
 
 function parseFrontMatter(document: string): { frontMatter: string; content: string } {
