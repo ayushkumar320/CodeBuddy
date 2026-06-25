@@ -1,6 +1,6 @@
 {
   "name": "@ayushkumar320/codebuddy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MCP memory server for multi-agent systems, powered by Postgres, pgvector, and Hugging Face.",
   "type": "module",
   "license": "MIT",
