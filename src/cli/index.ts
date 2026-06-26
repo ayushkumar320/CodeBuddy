@@ -16,6 +16,7 @@ import {
 } from "./commands/claude-desktop.js";
 import { installCodexEntry, listCodexEntries, removeCodexEntry } from "./commands/codex.js";
 import { runInitWizard } from "./commands/init-wizard.js";
+import { registerPlanCommands } from "./commands/plan.js";
 import { postgresDown, postgresStatus, postgresUp } from "./commands/postgres-docker.js";
 import { runUseCommand } from "./commands/use-command.js";
 
@@ -358,6 +359,8 @@ export function createCli(): Command {
         );
       });
     });
+
+  registerPlanCommands(program, runSafely);
 
   return program;
 }

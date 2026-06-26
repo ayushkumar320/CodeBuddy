@@ -7,6 +7,16 @@ import type { CodeBuddyConfig } from "./types.js";
 export const CONFIG_DIR = ".codebuddy";
 export const CONFIG_FILE = "config.json";
 
+/**
+ * Plan policy controls how strongly CodeBuddy nudges agents toward writing
+ * a plan before substantive work:
+ *   - off:      plans are never suggested or required.
+ *   - suggest:  agents are reminded to plan, but small tasks stay lightweight (default).
+ *   - required: agents should refuse substantive changes without an active plan.
+ */
+export const PLAN_POLICIES = ["off", "suggest", "required"] as const;
+export type PlanPolicy = (typeof PLAN_POLICIES)[number];
+
 const fileSchema = z.object({
   postgresUrl: z.string().min(1).optional(),
   namespace: z.string().min(1).optional(),
@@ -15,6 +25,11 @@ const fileSchema = z.object({
     .object({
       type: z.literal("huggingface").default("huggingface"),
       apiKey: z.string().min(1).optional(),
+    })
+    .optional(),
+  plan: z
+    .object({
+      policy: z.enum(PLAN_POLICIES).default("suggest"),
     })
     .optional(),
 });
@@ -105,6 +120,26 @@ export async function checkConfigPermissions(cwd = process.cwd()): Promise<Confi
     }
     throw error;
   }
+}
+
+/** Read the plan policy, honoring CODEBUDDY_PLAN_POLICY then the config file. */
+export async function loadPlanPolicy(cwd = process.cwd()): Promise<PlanPolicy> {
+  const fromEnv = process.env.CODEBUDDY_PLAN_POLICY;
+  if (fromEnv && (PLAN_POLICIES as readonly string[]).includes(fromEnv)) {
+    return fromEnv as PlanPolicy;
+  }
+  const file = await readConfigFile(cwd);
+  return file.plan?.policy ?? "suggest";
+}
+
+/** Persist the plan policy into `.codebuddy/config.json`, creating it if needed. */
+export async function setPlanPolicy(policy: PlanPolicy, cwd = process.cwd()): Promise<void> {
+  await initConfigFile(cwd);
+  const path = configPath(cwd);
+  const raw = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+  raw.plan = { ...(raw.plan as Record<string, unknown> | undefined), policy };
+  await writeFile(path, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o600 });
+  await chmod(path, 0o600);
 }
 
 export function redactSecrets(value: unknown): unknown {

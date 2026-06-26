@@ -1,11 +1,15 @@
 export type { CodeBuddyDependencies } from "./core/codebuddy.js";
 export { CodeBuddy } from "./core/codebuddy.js";
+export type { PlanPolicy } from "./core/config-file.js";
 export {
   checkConfigPermissions,
   configPath,
   initConfigFile,
+  loadPlanPolicy,
   loadRuntimeConfig,
+  PLAN_POLICIES,
   redactSecrets,
+  setPlanPolicy,
 } from "./core/config-file.js";
 export type {
   FactFile,
@@ -40,6 +44,18 @@ export {
   PlanLockError,
   PlanValidationError,
 } from "./core/plan-file-store.js";
+export type {
+  AbandonOptions,
+  AmendPlanPatch,
+  CompleteOptions,
+  CreatePlanInput,
+} from "./core/plan-lifecycle.js";
+export {
+  ActivePlanExistsError,
+  PlanLifecycle,
+  PlanNotFoundError,
+  PlanTransitionError,
+} from "./core/plan-lifecycle.js";
 export type { MemoryRepository } from "./core/repository.js";
 export type {
   CodeBuddyConfig,
@@ -75,5 +91,18 @@ export { clampBudgetForCallerModel, countTokens, DefaultPolicy } from "./planner
 export type { ModelProvider } from "./providers/adapter.js";
 export type { HuggingFaceProviderOptions } from "./providers/huggingface.js";
 export { HuggingFaceProvider } from "./providers/huggingface.js";
+export type { AssessorOptions } from "./risk/assessor.js";
+export { RiskAssessor } from "./risk/assessor.js";
+export type {
+  Assessment,
+  AssessmentInput,
+  AssessmentStats,
+  Evidence,
+  RiskCategory,
+  RiskItem,
+  Signal,
+  SignalContribution,
+  SignalStat,
+} from "./risk/types.js";
 export type { Tracer, TraceSpan } from "./tracing/langsmith.js";
 export { createTracer, isLangSmithTracingEnabled } from "./tracing/langsmith.js";
