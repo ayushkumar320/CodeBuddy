@@ -113,6 +113,6 @@ describe("MemoryFileStore", () => {
         sourceDeleted: false,
         content: "unsafe",
       }),
-    ).rejects.toThrow("symlinked memory path");
+    ).rejects.toThrow("symlinked path");
   });
 });

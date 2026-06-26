@@ -1,7 +1,13 @@
-import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
+import {
+  assertNoSymlinkBetween,
+  composeMarkdown,
+  parseFrontMatter,
+  writeAtomic,
+} from "./markdown-store-fs.js";
 
 const factFrontMatterSchema = z.object({
   schemaVersion: z.literal(1),
@@ -77,11 +83,9 @@ export class MemoryFileStore {
       createdByAgent: input.createdByAgent,
       sourceInteractionId: input.sourceInteractionId,
       sourceDeleted: input.sourceDeleted,
-    }).trimEnd();
-    const content = input.content.endsWith("\n") ? input.content : `${input.content}\n`;
-    const document = `---\n${frontMatter}\n---\n${content}`;
+    });
 
-    await writeAtomic(path, document);
+    await writeAtomic(path, composeMarkdown(frontMatter, input.content));
     return path;
   }
 
@@ -99,9 +103,8 @@ export class MemoryFileStore {
       tokenCount: input.tokenCount,
       createdAt: input.createdAt,
       createdByAgent: input.createdByAgent,
-    }).trimEnd();
-    const content = input.content.endsWith("\n") ? input.content : `${input.content}\n`;
-    await writeAtomic(path, `---\n${metadata}\n---\n${content}`);
+    });
+    await writeAtomic(path, composeMarkdown(metadata, input.content));
     return path;
   }
 
@@ -188,55 +191,5 @@ export class MemoryFileStore {
   private async prepareDirectory(directory: string): Promise<void> {
     await assertNoSymlinkBetween(this.repositoryRoot, dirname(directory));
     await mkdir(directory, { recursive: true, mode: 0o700 });
-  }
-}
-
-async function writeAtomic(path: string, document: string): Promise<void> {
-  const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-  const handle = await open(temporaryPath, "wx", 0o600);
-  try {
-    await handle.writeFile(document, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await rename(temporaryPath, path);
-}
-
-function parseFrontMatter(document: string): { frontMatter: string; content: string } {
-  if (!document.startsWith("---\n")) {
-    throw new Error("Memory file must start with YAML front matter.");
-  }
-  const closingIndex = document.indexOf("\n---\n", 4);
-  if (closingIndex === -1) {
-    throw new Error("Memory file has unterminated YAML front matter.");
-  }
-  return {
-    frontMatter: document.slice(4, closingIndex),
-    content: document.slice(closingIndex + 5),
-  };
-}
-
-async function assertNoSymlinkBetween(root: string, target: string): Promise<void> {
-  const absoluteRoot = resolve(root);
-  const absoluteTarget = resolve(target);
-  const relativeTarget = relative(absoluteRoot, absoluteTarget);
-  if (relativeTarget === ".." || relativeTarget.startsWith(`..${sep}`)) {
-    throw new Error(`Memory path escapes repository root: ${target}`);
-  }
-
-  let current = absoluteRoot;
-  const parts = relativeTarget.split(sep).filter(Boolean);
-  for (const part of parts) {
-    current = join(current, part);
-    try {
-      const info = await lstat(current);
-      if (info.isSymbolicLink()) {
-        throw new Error(`Refusing to use symlinked memory path: ${current}`);
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw error;
-    }
   }
 }

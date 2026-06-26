@@ -24,6 +24,22 @@ export {
   listFactsPage,
   runDoctor,
 } from "./core/operations.js";
+export type {
+  PlanFrontMatter,
+  PlanLockOptions,
+  PlannedFile,
+  PlannedTest,
+  PlanSpec,
+  PlanStatus,
+  PlanWrite,
+} from "./core/plan-file-store.js";
+export {
+  ACTIVE_PLAN_STATUSES,
+  PLAN_STATUSES,
+  PlanFileStore,
+  PlanLockError,
+  PlanValidationError,
+} from "./core/plan-file-store.js";
 export type { MemoryRepository } from "./core/repository.js";
 export type {
   CodeBuddyConfig,
