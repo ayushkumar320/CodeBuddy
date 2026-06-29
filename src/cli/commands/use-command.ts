@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { confirm, isCancel, log, note, password, spinner, text } from "@clack/prompts";
 import pc from "picocolors";
+import { initProjectScaffold } from "../../core/config-file.js";
 import { mergeGlobalConfig, readGlobalConfig } from "../../core/global-config.js";
 import { bootstrapDatabase } from "../../db/bootstrap.js";
 import { createDatabaseClient, pingDatabase } from "../../db/client.js";
@@ -62,6 +63,7 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
   try {
     const folderName = basename(process.cwd());
     const namespace = sanitizeNamespace(options.namespace ?? folderName);
+    await initProjectScaffold();
     note(
       `Project folder: ${pc.bold(process.cwd())}\nNamespace:      ${pc.bold(namespace)}`,
       "codebuddy use",

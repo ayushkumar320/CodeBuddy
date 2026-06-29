@@ -5,6 +5,7 @@ export {
   checkConfigPermissions,
   configPath,
   initConfigFile,
+  initProjectScaffold,
   loadPlanPolicy,
   loadRuntimeConfig,
   PLAN_POLICIES,

@@ -7,6 +7,21 @@ import type { CodeBuddyConfig } from "./types.js";
 export const CONFIG_DIR = ".codebuddy";
 export const CONFIG_FILE = "config.json";
 
+const PROJECT_GITIGNORE = [
+  "# CodeBuddy local-only files",
+  "/config.json",
+  "/cache/",
+  "/plans/.locks/",
+  "/memory/.locks/",
+  "",
+  "# Keep these reviewable project artifacts shareable by default:",
+  "#   /memory/facts/*.md",
+  "#   /memory/summaries/*.md",
+  "#   /plans/*.md",
+  "# If your project memory is private, ignore /memory/ in the repo root .gitignore.",
+  "",
+].join("\n");
+
 /**
  * Plan policy controls how strongly CodeBuddy nudges agents toward writing
  * a plan before substantive work:
@@ -48,11 +63,30 @@ export function configPath(cwd = process.cwd()): string {
   return join(cwd, CONFIG_DIR, CONFIG_FILE);
 }
 
+export async function initProjectScaffold(cwd = process.cwd()): Promise<{
+  codebuddyDir: string;
+  gitignorePath: string;
+}> {
+  const codebuddyDir = join(cwd, CONFIG_DIR);
+  await mkdir(join(codebuddyDir, "memory", "facts"), { recursive: true, mode: 0o700 });
+  await mkdir(join(codebuddyDir, "memory", "summaries"), { recursive: true, mode: 0o700 });
+  await mkdir(join(codebuddyDir, "plans"), { recursive: true, mode: 0o700 });
+
+  const gitignorePath = join(codebuddyDir, ".gitignore");
+  try {
+    await access(gitignorePath, constants.F_OK);
+  } catch {
+    await writeFile(gitignorePath, PROJECT_GITIGNORE, { mode: 0o644 });
+  }
+
+  return { codebuddyDir, gitignorePath };
+}
+
 export async function initConfigFile(
   cwd = process.cwd(),
 ): Promise<{ path: string; created: boolean }> {
   const path = configPath(cwd);
-  await mkdir(join(cwd, CONFIG_DIR), { recursive: true, mode: 0o700 });
+  await initProjectScaffold(cwd);
   try {
     await access(path, constants.F_OK);
     await chmod(path, 0o600);

@@ -45,6 +45,37 @@ codebuddy claude install --namespace your-project
 
 Then restart Claude Desktop (⌘Q + reopen) and the new namespace's tools are live.
 
+### Team setup
+
+CodeBuddy is designed so multiple developers or agents can share project
+knowledge without sharing local secrets.
+
+`codebuddy init` and `codebuddy use` create this project scaffold:
+
+```text
+.codebuddy/
+├── .gitignore          # keeps local secrets, caches, and locks out of git
+├── config.json         # local-only Postgres/token settings
+├── memory/
+│   ├── facts/          # reviewable Markdown facts
+│   └── summaries/      # reviewable Markdown summaries
+└── plans/              # reviewable Markdown work plans
+```
+
+Commit `.codebuddy/memory/**/*.md` and `.codebuddy/plans/*.md` when you want
+the team to share agent memory and plans. Do **not** commit
+`.codebuddy/config.json`; each teammate runs `codebuddy use` or `codebuddy init`
+locally with their own token and database URL.
+
+Use one namespace per project, for example:
+
+```bash
+codebuddy use my-project
+```
+
+That keeps each project isolated while still allowing explicit sharing through
+the `share` tool when you want one namespace to hand facts to another.
+
 ### Manual setup (if you prefer)
 
 ```bash

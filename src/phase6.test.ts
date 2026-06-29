@@ -1,9 +1,14 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { CodeBuddy } from "./core/codebuddy.js";
-import { checkConfigPermissions, initConfigFile, redactSecrets } from "./core/config-file.js";
+import {
+  checkConfigPermissions,
+  initConfigFile,
+  initProjectScaffold,
+  redactSecrets,
+} from "./core/config-file.js";
 import { InMemoryMemoryRepository } from "./core/in-memory-repository.js";
 import { listFactsPage, runDoctor } from "./core/operations.js";
 import { CodeBuddyNode } from "./langgraph/node.js";
@@ -91,6 +96,22 @@ describe("Phase 6 LangGraph helpers", () => {
 });
 
 describe("Phase 6 config and doctor", () => {
+  it("creates a team-friendly .codebuddy scaffold", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "codebuddy-"));
+    try {
+      const result = await initProjectScaffold(dir);
+      expect(await stat(join(dir, ".codebuddy", "memory", "facts"))).toBeTruthy();
+      expect(await stat(join(dir, ".codebuddy", "memory", "summaries"))).toBeTruthy();
+      expect(await stat(join(dir, ".codebuddy", "plans"))).toBeTruthy();
+      const gitignore = await readFile(result.gitignorePath, "utf8");
+      expect(gitignore).toContain("/config.json");
+      expect(gitignore).toContain("/plans/.locks/");
+      expect(gitignore).toContain("/memory/facts/*.md");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("creates config with 0600 permissions and redacts tokens", async () => {
     const dir = await mkdtemp(join(tmpdir(), "codebuddy-"));
     try {
