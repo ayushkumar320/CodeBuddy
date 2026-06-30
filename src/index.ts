@@ -13,12 +13,15 @@ export {
   setPlanPolicy,
 } from "./core/config-file.js";
 export type {
+  FactCategory,
   FactFile,
   FactFileWrite,
+  IncidentFactFile,
+  IncidentSeverity,
   SummaryFile,
   SummaryFileWrite,
 } from "./core/memory-file-store.js";
-export { MemoryFileStore } from "./core/memory-file-store.js";
+export { FACT_CATEGORIES, INCIDENT_SEVERITIES, MemoryFileStore } from "./core/memory-file-store.js";
 export type { MigrationPreview } from "./core/migrate-to-files.js";
 export { migrateMemoryToFiles } from "./core/migrate-to-files.js";
 export {
@@ -94,6 +97,8 @@ export type { HuggingFaceProviderOptions } from "./providers/huggingface.js";
 export { HuggingFaceProvider } from "./providers/huggingface.js";
 export type { AssessorOptions } from "./risk/assessor.js";
 export { RiskAssessor } from "./risk/assessor.js";
+export type { IncidentSignalOptions } from "./risk/signals/incident.js";
+export { createIncidentSignal } from "./risk/signals/incident.js";
 export type {
   Assessment,
   AssessmentInput,

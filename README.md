@@ -158,6 +158,24 @@ codebuddy reindex --full
 Reindex restores fact and summary rows and creates pending embeddings. The
 embedding worker regenerates vectors afterward.
 
+### Incident memory
+
+Facts can optionally be tagged as incidents. This lets CodeBuddy remember
+past breakages and connect them to files:
+
+```yaml
+category: incident
+paths:
+  - src/auth/oauth.ts
+severity: high
+introducedBy: abc123
+resolvedBy: null
+```
+
+Normal facts still work without these fields. Incident facts are useful for
+risk checks: if a future plan touches `src/auth/oauth.ts`, CodeBuddy can find
+the past incident and warn the agent before it repeats the same mistake.
+
 ### Rollback
 
 The migration does not delete old database records. To roll back before a
@@ -231,7 +249,7 @@ await runtime.close();
 Notes:
 
 - `remember` defaults to `type: "interaction"`
-- v0.1 supports explicit `interaction`, `fact`, and `summary` writes
+- explicit `interaction`, `fact`, and `summary` writes are supported
 - repeated writes with the same idempotency key or same content return `deduplicated: true`
 - embeddings are prepared asynchronously; recall falls back to recency while vectors are pending
 
@@ -246,8 +264,12 @@ Notes:
 | `list_namespaces` | `{}` | `{ namespaces: [{ name, factCount, lastActivity }] }` |
 | `forget` | `{ id }` | `{ ok, entityType }` |
 | `share` | `{ to_namespace, factIds, mode?: "reference" \| "snapshot", agentId? }` | `{ shared }` |
+| `plan_current` | `{}` | `{ plan, policy }` |
+| `plan_create` | `{ title, brief, ... }` | `{ plan }` |
+| `plan_amend` | `{ id, patch }` | `{ plan }` |
+| `plan_status` | `{ id, status, ... }` | `{ plan }` |
 
-v0.1 ships MCP tools only over stdio. Resources, prompts, and HTTP transport are deferred.
+MCP currently ships over stdio. HTTP transport remains deferred.
 
 ## LangGraph
 
@@ -295,21 +317,6 @@ const graph = new StateGraph(State)
 
 Recall caching defaults to 30 seconds and is keyed by `(namespace, sessionId, query)`.
 
-## CLI
-
-```bash
-codebuddy init
-codebuddy serve
-codebuddy inspect <namespace>
-codebuddy namespaces
-codebuddy prune --older-than 30d
-codebuddy export <namespace>
-codebuddy stats
-codebuddy doctor
-```
-
-`namespaces` lists namespace summaries. `inspect <namespace>` shows facts and per-agent write breakdowns.
-
 ## Examples
 
 - `examples/claude-desktop`: MCP stdio config for Claude Desktop
@@ -339,8 +346,8 @@ Doctor reports database connectivity, pgvector availability, vector/index health
 - for private project memory, add `.codebuddy/memory/` to the project’s `.gitignore`
 - for selective sharing, ignore a private subdirectory and keep public memory separate
 - encryption at rest is the deployment owner’s responsibility
-- v0.1 has no automatic PII detection
-- sensitivity metadata and redaction workflows are deferred
+- automatic PII detection is not yet shipped
+- sensitivity metadata and stronger redaction workflows are planned
 
 ## License
 

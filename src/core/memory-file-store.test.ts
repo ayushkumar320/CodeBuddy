@@ -38,12 +38,119 @@ describe("MemoryFileStore", () => {
     const raw = await readFile(path, "utf8");
     expect(raw).toContain("schemaVersion: 1");
     expect(raw).toContain("type: fact");
+    expect(raw).not.toContain("category: general");
     await expect(store.readFact("fact_01abc")).resolves.toMatchObject({
       id: "fact_01abc",
       namespace: "research-agent",
       content: "Use layer caching.",
       createdByAgent: "codex",
+      category: "general",
+      paths: [],
+      severity: null,
     });
+  });
+
+  it("round-trips incident metadata on facts", async () => {
+    const store = new MemoryFileStore(await temporaryRoot());
+    const path = await store.writeFact({
+      id: "fact_01incident",
+      namespace: "research-agent",
+      subject: "src/auth/oauth.ts",
+      predicate: "caused",
+      object: "login regression",
+      confidence: 0.9,
+      createdAt: "2026-06-25T10:00:00.000Z",
+      createdByAgent: "codex",
+      sourceInteractionId: null,
+      sourceDeleted: false,
+      category: "incident",
+      paths: ["src/auth/oauth.ts", "./src/api/login.ts"],
+      severity: "high",
+      introducedBy: "abc123",
+      resolvedBy: null,
+      content: "Changing OAuth callback validation broke login.",
+    });
+
+    const raw = await readFile(path, "utf8");
+    expect(raw).toContain("category: incident");
+    expect(raw).toContain("severity: high");
+    await expect(store.readFact("fact_01incident")).resolves.toMatchObject({
+      category: "incident",
+      paths: ["src/auth/oauth.ts", "./src/api/login.ts"],
+      severity: "high",
+      introducedBy: "abc123",
+      resolvedBy: null,
+    });
+  });
+
+  it("finds unresolved incident facts by repo-relative path", async () => {
+    const store = new MemoryFileStore(await temporaryRoot());
+    await store.writeFact({
+      id: "fact_01low",
+      namespace: "research-agent",
+      subject: "src/auth/oauth.ts",
+      predicate: "caused",
+      object: "minor issue",
+      confidence: 1,
+      createdAt: "2026-06-25T09:00:00.000Z",
+      createdByAgent: null,
+      sourceInteractionId: null,
+      sourceDeleted: false,
+      category: "incident",
+      paths: ["./src/auth/oauth.ts"],
+      severity: "low",
+      content: "OAuth had a minor incident.",
+    });
+    await store.writeFact({
+      id: "fact_01high",
+      namespace: "research-agent",
+      subject: "src/auth/oauth.ts",
+      predicate: "caused",
+      object: "login outage",
+      confidence: 1,
+      createdAt: "2026-06-25T10:00:00.000Z",
+      createdByAgent: null,
+      sourceInteractionId: null,
+      sourceDeleted: false,
+      category: "incident",
+      paths: ["src/auth/oauth.ts"],
+      severity: "high",
+      content: "OAuth caused a login outage.",
+    });
+    await store.writeFact({
+      id: "fact_01resolved",
+      namespace: "research-agent",
+      subject: "src/auth/oauth.ts",
+      predicate: "caused",
+      object: "fixed issue",
+      confidence: 1,
+      createdAt: "2026-06-25T11:00:00.000Z",
+      createdByAgent: null,
+      sourceInteractionId: null,
+      sourceDeleted: false,
+      category: "incident",
+      paths: ["src/auth/oauth.ts"],
+      severity: "critical",
+      resolvedBy: "def456",
+      content: "Old OAuth incident was resolved.",
+    });
+
+    const active = await store.findIncidentFactsForPaths({
+      namespace: "research-agent",
+      paths: ["src/auth/oauth.ts"],
+    });
+    expect(active.map((fact) => fact.id)).toEqual(["fact_01high", "fact_01low"]);
+
+    const withResolved = await store.findIncidentFactsForPaths({
+      namespace: "research-agent",
+      paths: ["src/auth/oauth.ts"],
+      includeResolved: true,
+    });
+    expect(withResolved.map((fact) => fact.id)).toEqual([
+      "fact_01resolved",
+      "fact_01high",
+      "fact_01low",
+    ]);
   });
 
   it("round-trips a Markdown summary", async () => {

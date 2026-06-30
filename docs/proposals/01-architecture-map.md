@@ -1,8 +1,8 @@
 # Proposal 01 — Architecture Map
 
-Status: Draft
+Status: Deferred/gated
 Owner: @ayushkumar320
-Target: v0.2.0
+Target: v0.2.x
 Depends on: existing `MemoryRepository`, `pgvector`, the CLI runtime
 
 ## Why this exists

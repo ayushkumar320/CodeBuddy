@@ -47,7 +47,7 @@ Transaction rules:
 
 ## Embedding Pipeline
 
-Embeddings are asynchronous in v0.1 and run in an in-process worker.
+Embeddings are asynchronous and run in an in-process worker.
 
 Embedding record lifecycle:
 
@@ -106,7 +106,7 @@ source fact A -----> copied fact B in target
 
 ## Conflicts
 
-v0.1 does not attempt automatic conflict resolution.
+CodeBuddy does not attempt automatic conflict resolution yet.
 
 Default recall behavior:
 
@@ -119,11 +119,11 @@ Supported recall modes:
 - `latest`
 - `highest_confidence`
 
-The downstream LLM or agent is responsible for reconciling contradictions in v0.1.
+The downstream LLM or agent is responsible for reconciling contradictions.
 
 ## MCP Surface
 
-v0.1 intentionally ships tools only.
+The current MCP server intentionally ships tools only.
 
 Deferred:
 
@@ -167,8 +167,8 @@ Rules:
 - facts and summaries are plaintext Markdown
 - conversations, shares, telemetry, and indexes are plaintext in PostgreSQL
 - project owners decide whether `.codebuddy/memory/` is committed or ignored
-- encryption at rest is a deployment responsibility, not an app-layer feature in v0.1
-- no automatic PII detection ships in v0.1
+- encryption at rest is a deployment responsibility, not an app-layer feature
+- automatic PII detection is planned but not shipped
 - later releases may add sensitivity metadata and redaction workflows
 
 ## Forget Semantics

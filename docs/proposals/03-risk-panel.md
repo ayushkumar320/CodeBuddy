@@ -1,10 +1,10 @@
 # Proposal 03 — Risk Panel
 
-Status: Draft
+Status: In Progress
 Owner: @ayushkumar320
-Target: v0.2.0
-Depends on: Proposal 01 (Architecture Map) for call-graph signals.
-            Proposal 02 (Plan Panel) for `filesToTouch` as input.
+Target: v0.2.x
+Depends on: Implemented Plan Panel for `filesToTouch` as input.
+            Proposal 01 (Architecture Map) only for optional call-graph signals.
             Existing memory layer for prior-incident signals.
 
 ## Why this exists

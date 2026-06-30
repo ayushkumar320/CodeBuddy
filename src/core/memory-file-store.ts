@@ -9,6 +9,11 @@ import {
   writeAtomic,
 } from "./markdown-store-fs.js";
 
+export const FACT_CATEGORIES = ["general", "incident"] as const;
+export type FactCategory = (typeof FACT_CATEGORIES)[number];
+export const INCIDENT_SEVERITIES = ["low", "medium", "high", "critical"] as const;
+export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number];
+
 const factFrontMatterSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string().regex(/^fact_[a-z0-9]+$/),
@@ -25,6 +30,11 @@ const factFrontMatterSchema = z.object({
   createdByAgent: z.string().nullable(),
   sourceInteractionId: z.string().nullable(),
   sourceDeleted: z.boolean(),
+  category: z.enum(FACT_CATEGORIES).default("general"),
+  paths: z.array(z.string().min(1)).default([]),
+  severity: z.enum(INCIDENT_SEVERITIES).nullable().default(null),
+  introducedBy: z.string().nullable().default(null),
+  resolvedBy: z.string().nullable().default(null),
 });
 
 const summaryFrontMatterSchema = z.object({
@@ -47,7 +57,22 @@ export type FactFile = z.infer<typeof factFrontMatterSchema> & {
   path: string;
 };
 
-export type FactFileWrite = Omit<FactFile, "path" | "schemaVersion" | "type">;
+export type FactFileWrite = Omit<
+  FactFile,
+  | "path"
+  | "schemaVersion"
+  | "type"
+  | "category"
+  | "paths"
+  | "severity"
+  | "introducedBy"
+  | "resolvedBy"
+> &
+  Partial<Pick<FactFile, "category" | "paths" | "severity" | "introducedBy" | "resolvedBy">>;
+export type IncidentFactFile = FactFile & {
+  category: "incident";
+  severity: IncidentSeverity;
+};
 export type SummaryFile = z.infer<typeof summaryFrontMatterSchema> & {
   content: string;
   path: string;
@@ -70,7 +95,7 @@ export class MemoryFileStore {
     await this.prepareDirectory(this.factsDirectory);
     await assertNoSymlinkBetween(this.repositoryRoot, dirname(path));
 
-    const frontMatter = stringifyYaml({
+    const metadata = {
       schemaVersion: 1,
       id: input.id,
       namespace: input.namespace,
@@ -83,7 +108,13 @@ export class MemoryFileStore {
       createdByAgent: input.createdByAgent,
       sourceInteractionId: input.sourceInteractionId,
       sourceDeleted: input.sourceDeleted,
-    });
+      category: input.category,
+      paths: input.paths,
+      severity: input.severity,
+      introducedBy: input.introducedBy,
+      resolvedBy: input.resolvedBy,
+    };
+    const frontMatter = stringifyYaml(stripUndefinedAndDefaultIncidentFields(metadata));
 
     await writeAtomic(path, composeMarkdown(frontMatter, input.content));
     return path;
@@ -134,6 +165,29 @@ export class MemoryFileStore {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
     }
+  }
+
+  async findIncidentFactsForPaths(input: {
+    namespace?: string;
+    paths: string[];
+    includeResolved?: boolean;
+  }): Promise<IncidentFactFile[]> {
+    const wanted = new Set(input.paths.map(normalizeMemoryPath));
+    if (wanted.size === 0) return [];
+
+    const incidents = (await this.listFacts()).filter((fact): fact is IncidentFactFile => {
+      if (fact.category !== "incident") return false;
+      if (!fact.severity) return false;
+      if (input.namespace && fact.namespace !== input.namespace) return false;
+      if (!input.includeResolved && fact.resolvedBy) return false;
+      return fact.paths.map(normalizeMemoryPath).some((path) => wanted.has(path));
+    });
+
+    return incidents.sort((left, right) => {
+      const severity = severityRank(right.severity) - severityRank(left.severity);
+      if (severity !== 0) return severity;
+      return right.createdAt.localeCompare(left.createdAt);
+    });
   }
 
   async readSummary(pathOrId: string): Promise<SummaryFile> {
@@ -191,5 +245,41 @@ export class MemoryFileStore {
   private async prepareDirectory(directory: string): Promise<void> {
     await assertNoSymlinkBetween(this.repositoryRoot, dirname(directory));
     await mkdir(directory, { recursive: true, mode: 0o700 });
+  }
+}
+
+function stripUndefinedAndDefaultIncidentFields(
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([key, value]) => {
+      if (value === undefined) return false;
+      if (key === "category" && value === "general") return false;
+      if (key === "paths" && Array.isArray(value) && value.length === 0) return false;
+      if (
+        ["severity", "introducedBy", "resolvedBy"].includes(key) &&
+        (value === null || value === undefined)
+      ) {
+        return false;
+      }
+      return true;
+    }),
+  );
+}
+
+function normalizeMemoryPath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function severityRank(severity: IncidentSeverity): number {
+  switch (severity) {
+    case "critical":
+      return 4;
+    case "high":
+      return 3;
+    case "medium":
+      return 2;
+    case "low":
+      return 1;
   }
 }
