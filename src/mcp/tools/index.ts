@@ -7,6 +7,8 @@ import { PlanFileStore } from "../../core/plan-file-store.js";
 import { PlanLifecycle } from "../../core/plan-lifecycle.js";
 import type { MemoryRepository } from "../../core/repository.js";
 import type { RecallInput, RememberInput } from "../../core/types.js";
+import { buildArchitectureMap, neighbours, queryMap } from "../../map/indexer.js";
+import { assessRisk } from "../../risk/service.js";
 
 const rememberSchema = {
   sessionId: z.string().optional(),
@@ -81,6 +83,21 @@ export const mcpToolInputSchemas = {
     commitSha: z.string().optional(),
     notes: z.string().optional(),
     reason: z.string().optional(),
+  }),
+  risk_assess: z.object({
+    planId: z.string().min(1).optional(),
+    paths: z.array(z.string().min(1)).optional(),
+    useGit: z.boolean().optional(),
+    limit: z.number().int().positive().max(100).optional(),
+  }),
+  map_query: z.object({
+    from: z.string().min(1).optional(),
+    to: z.string().min(1).optional(),
+    limit: z.number().int().positive().max(100).optional(),
+  }),
+  map_neighbours: z.object({
+    module: z.string().min(1),
+    direction: z.enum(["in", "out", "both"]).default("both"),
   }),
 } as const;
 
@@ -296,6 +313,58 @@ export function registerCodeBuddyTools(server: McpServer, options: RegisterCodeB
           input.reason !== undefined ? { reason: input.reason } : {},
         );
       return json(serializePlan(next));
+    },
+  );
+
+  server.registerTool(
+    "risk_assess",
+    {
+      title: "Assess risk",
+      description: "Assess evidence-backed risk for a plan, explicit paths, or git changes.",
+      inputSchema: mcpToolInputSchemas.risk_assess.shape,
+    },
+    async (input) =>
+      json(
+        await assessRisk({
+          repositoryRoot: projectRoot,
+          namespace,
+          ...(input.planId !== undefined ? { planId: input.planId } : {}),
+          ...(input.paths !== undefined ? { paths: input.paths } : {}),
+          ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "map_query",
+    {
+      title: "Query architecture map",
+      description: "Query lightweight module import edges in the current repository.",
+      inputSchema: mcpToolInputSchemas.map_query.shape,
+    },
+    async (input) => {
+      const graph = await buildArchitectureMap(projectRoot);
+      return json(
+        queryMap(graph, {
+          ...(input.from !== undefined ? { from: input.from } : {}),
+          ...(input.to !== undefined ? { to: input.to } : {}),
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        }),
+      );
+    },
+  );
+
+  server.registerTool(
+    "map_neighbours",
+    {
+      title: "Module neighbours",
+      description: "Return inbound/outbound neighbours for a repository module.",
+      inputSchema: mcpToolInputSchemas.map_neighbours.shape,
+    },
+    async (input) => {
+      const graph = await buildArchitectureMap(projectRoot);
+      return json(neighbours(graph, input.module, input.direction));
     },
   );
 }

@@ -50,6 +50,11 @@ describe("Phase 6 MCP schemas", () => {
     expect(
       mcpToolInputSchemas.share.parse({ to_namespace: "other", factIds: ["fact_1"] }).mode,
     ).toBeUndefined();
+    expect(mcpToolInputSchemas.risk_assess.parse({ paths: ["src/a.ts"], limit: 5 }).paths).toEqual([
+      "src/a.ts",
+    ]);
+    expect(mcpToolInputSchemas.map_query.parse({ from: "src/a.ts" }).from).toBe("src/a.ts");
+    expect(mcpToolInputSchemas.map_neighbours.parse({ module: "src/a.ts" }).direction).toBe("both");
   });
 
   it("pages list_facts with opaque base64url cursors", async () => {

@@ -78,6 +78,8 @@ export type {
 export type { WorkerState } from "./core/worker.js";
 export { EmbeddingWorker } from "./core/worker.js";
 export { createPostgresRepository } from "./db/repository.js";
+export { buildArchitectureMap, neighbours, queryMap } from "./map/indexer.js";
+export type { ArchitectureMap, MapQuery, ModuleEdge, ModuleNode } from "./map/types.js";
 export { startMcpServer } from "./mcp/server.js";
 export { mcpToolInputSchemas, registerCodeBuddyTools } from "./mcp/tools/index.js";
 export type {
@@ -97,8 +99,14 @@ export type { HuggingFaceProviderOptions } from "./providers/huggingface.js";
 export { HuggingFaceProvider } from "./providers/huggingface.js";
 export type { AssessorOptions } from "./risk/assessor.js";
 export { RiskAssessor } from "./risk/assessor.js";
+export type { RiskAssessRequest } from "./risk/service.js";
+export { assessRisk, resolveRiskPaths } from "./risk/service.js";
+export type { ChurnSignalOptions } from "./risk/signals/churn.js";
+export { createChurnSignal } from "./risk/signals/churn.js";
 export type { IncidentSignalOptions } from "./risk/signals/incident.js";
 export { createIncidentSignal } from "./risk/signals/incident.js";
+export type { PolicyFile, PolicyRule, PolicySignalOptions } from "./risk/signals/policy.js";
+export { createPolicySignal, readPolicyFile } from "./risk/signals/policy.js";
 export type {
   Assessment,
   AssessmentInput,

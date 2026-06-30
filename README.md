@@ -102,6 +102,8 @@ codebuddy list-facts          # paginate facts
 codebuddy migrate to-files    # preview export of existing DB memories
 codebuddy migrate to-files --write
 codebuddy reindex --full      # rebuild facts + summaries from Markdown
+codebuddy risk assess --git   # assess risk for current git changes
+codebuddy map build           # summarize the lightweight import graph
 codebuddy prune --older-than 30d
 ```
 
@@ -175,6 +177,37 @@ resolvedBy: null
 Normal facts still work without these fields. Incident facts are useful for
 risk checks: if a future plan touches `src/auth/oauth.ts`, CodeBuddy can find
 the past incident and warn the agent before it repeats the same mistake.
+
+## Risk and architecture map
+
+CodeBuddy can assess change risk from structured memory, project policy, and
+recent Git churn:
+
+```bash
+codebuddy risk assess --git
+codebuddy risk assess --paths src/auth/oauth.ts,src/api/login.ts
+codebuddy risk assess --plan pln_abc123 --explain
+codebuddy risk assess --json
+```
+
+Optional project policy lives in `.codebuddy/policies.yaml`:
+
+```yaml
+rules:
+  - id: auth-sensitive
+    pattern: "src/auth/**"
+    message: "Auth changes need careful review."
+    weight: 70
+```
+
+The lightweight architecture map scans TypeScript/JavaScript imports on
+demand:
+
+```bash
+codebuddy map build
+codebuddy map deps src/cli/index.ts
+codebuddy map dependents src/core/codebuddy.ts
+```
 
 ### Rollback
 
@@ -268,6 +301,9 @@ Notes:
 | `plan_create` | `{ title, brief, ... }` | `{ plan }` |
 | `plan_amend` | `{ id, patch }` | `{ plan }` |
 | `plan_status` | `{ id, status, ... }` | `{ plan }` |
+| `risk_assess` | `{ planId?, paths?, useGit?, limit? }` | `{ items, stats }` |
+| `map_query` | `{ from?, to?, limit? }` | `ModuleEdge[]` |
+| `map_neighbours` | `{ module, direction? }` | `{ modules, edges }` |
 
 MCP currently ships over stdio. HTTP transport remains deferred.
 
