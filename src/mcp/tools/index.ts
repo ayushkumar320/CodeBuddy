@@ -9,6 +9,7 @@ import { PlanLifecycle } from "../../core/plan-lifecycle.js";
 import type { MemoryRepository } from "../../core/repository.js";
 import type { RecallInput, RememberInput } from "../../core/types.js";
 import { buildArchitectureMap, neighbours, queryMap } from "../../map/indexer.js";
+import { captureAfterTurn } from "../../memory-extract/engine.js";
 import { assessRisk } from "../../risk/service.js";
 
 const rememberSchema = {
@@ -106,6 +107,13 @@ export const mcpToolInputSchemas = {
     paths: z.array(z.string().min(1)).optional(),
     planId: z.string().min(1).optional(),
     useGit: z.boolean().optional(),
+  }),
+  context_after_turn: z.object({
+    summary: z.string().min(1),
+    changedFiles: z.array(z.string().min(1)).optional(),
+    planId: z.string().min(1).optional(),
+    taskType: z.string().min(1).optional(),
+    agentId: z.string().optional(),
   }),
 } as const;
 
@@ -417,6 +425,42 @@ export function registerCodeBuddyTools(server: McpServer, options: RegisterCodeB
           ...(tokenBudget !== undefined ? { tokenBudget } : {}),
         }),
       ),
+  );
+
+  server.registerTool(
+    "context_after_turn",
+    {
+      title: "Capture context after a turn",
+      description:
+        "Extract durable knowledge from a turn summary. Confident facts/decisions/incidents are auto-saved as Markdown; temporary notes, low-confidence, and sensitive items are queued for review under .codebuddy/memory/review/; chatter is ignored. Never saves sensitive content automatically.",
+      inputSchema: mcpToolInputSchemas.context_after_turn.shape,
+    },
+    async (input) => {
+      const result = await captureAfterTurn({
+        summary: input.summary,
+        namespace,
+        ...(input.changedFiles !== undefined ? { changedFiles: input.changedFiles } : {}),
+        ...(input.planId !== undefined ? { planId: input.planId } : {}),
+        ...(input.taskType !== undefined ? { taskType: input.taskType } : {}),
+        ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
+      });
+      return json({
+        saved: result.saved.map((d) => ({
+          id: d.ref,
+          class: d.candidate.class,
+          subject: d.candidate.subject,
+        })),
+        queuedForReview: result.queuedForReview.map((d) => ({
+          id: d.ref,
+          class: d.candidate.class,
+          reason: d.reason,
+          sensitive: d.sensitive,
+        })),
+        ignored: result.ignored.length,
+        reasons: result.reasons,
+        extractor: result.extractor,
+      });
+    },
   );
 }
 

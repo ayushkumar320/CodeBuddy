@@ -30,4 +30,16 @@ describe("context MCP tool schemas", () => {
   it("context_before_edit rejects a non-boolean useGit", () => {
     expect(() => mcpToolInputSchemas.context_before_edit.parse({ useGit: "yes" })).toThrow();
   });
+
+  it("context_after_turn requires a summary", () => {
+    expect(() => mcpToolInputSchemas.context_after_turn.parse({})).toThrow();
+    const parsed = mcpToolInputSchemas.context_after_turn.parse({
+      summary: "fixed the OAuth callback",
+      changedFiles: ["src/auth/oauth.ts"],
+      planId: "pln_01abc",
+      taskType: "bugfix",
+    });
+    expect(parsed.summary).toBe("fixed the OAuth callback");
+    expect(parsed.changedFiles).toEqual(["src/auth/oauth.ts"]);
+  });
 });

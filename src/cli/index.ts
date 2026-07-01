@@ -19,6 +19,7 @@ import { registerContextCommands } from "./commands/context.js";
 import { registerIndexCommands } from "./commands/indexing.js";
 import { runInitWizard } from "./commands/init-wizard.js";
 import { registerMapCommands } from "./commands/map.js";
+import { registerMemoryCommands } from "./commands/memory-review.js";
 import { registerPlanCommands } from "./commands/plan.js";
 import { postgresDown, postgresStatus, postgresUp } from "./commands/postgres-docker.js";
 import { registerRiskCommands } from "./commands/risk.js";
@@ -403,6 +404,7 @@ export function createCli(): Command {
   registerMapCommands(program, runSafely);
   registerContextCommands(program, runSafely);
   registerIndexCommands(program, runSafely);
+  registerMemoryCommands(program, runSafely);
 
   return program;
 }

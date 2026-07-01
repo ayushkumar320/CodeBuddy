@@ -35,6 +35,10 @@ Always run typecheck + lint + tests before considering a change done.
 - `indexer/` — **Phase 04.3** background indexer: `scan` (gitignore-aware), deterministic
   `summary`, incremental `engine`, `watch` coalescer. Manifest cached at
   `.codebuddy/cache/index.json` (gitignored, rebuildable — not a source of truth).
+- `memory-extract/` — **Phase 04.4** automatic memory capture: `deterministic` parser
+  (no-LLM baseline), `llm` validation/retry wrapper, `sensitive` scan, `review-store`,
+  and `engine` (gating + `captureAfterTurn`/`approveReviewItem`). Review queue at
+  `.codebuddy/memory/review/`.
 - `planner/`, `providers/`, `langgraph/` — budget/policy, HF adapter, LangGraph node.
 - `cli/` — commander CLI; `commands/*` register subcommands via `register*Commands(program, runSafely)`.
 
@@ -69,8 +73,12 @@ Phase status:
 - ✅ 04.3 Background indexing — `codebuddy index [--full]` + `codebuddy watch`,
   `src/indexer/`. Gitignore-aware scan, content hashes, deterministic summaries,
   incremental refresh, coalesced watch. No LLM, no hidden daemon.
-- ⏭️ 04.4 Automatic memory extraction + review queue — next.
-- ⏳ 04.5 Token savings engine (fills in the savings placeholders).
+- ✅ 04.4 Automatic memory extraction + review queue — `context_after_turn` MCP tool,
+  `codebuddy memory review list|show|approve|reject|edit`, `src/memory-extract/`.
+  Confident facts/decisions/incidents auto-save; notes, low-confidence, and sensitive
+  items queue for review; chatter is dropped. Deterministic by default; LLM extraction
+  is optional and strictly validated. Bias: prefer a missed memory over a false fact.
+- ⏭️ 04.5 Token savings engine (fills in the savings placeholders) — next.
 - ⏳ 04.6 Suggestion engine · 04.7 Client workflow templates · 04.8 Release hardening.
 
 ## Gotchas
