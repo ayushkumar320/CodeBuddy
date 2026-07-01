@@ -5,7 +5,13 @@ import { createPostgresRepository } from "../db/repository.js";
 import type { ModelProvider } from "../providers/adapter.js";
 import { DEFAULT_EMBEDDING_MODELS, DEFAULT_LLM_MODELS } from "../providers/models.js";
 import { CodeBuddy } from "./codebuddy.js";
-import { checkConfigPermissions, loadRuntimeConfig, redactSecrets } from "./config-file.js";
+import {
+  checkConfigPermissions,
+  checkProjectScaffold,
+  loadRuntimeConfig,
+  readConfigFile,
+  redactSecrets,
+} from "./config-file.js";
 import { MemoryFileStore } from "./memory-file-store.js";
 import type { MemoryRepository } from "./repository.js";
 import type { CodeBuddyConfig } from "./types.js";
@@ -105,7 +111,7 @@ export async function inspectNamespace(repository: MemoryRepository, namespace?:
 }
 
 export type DoctorReport = {
-  db: { ok: boolean; error?: string };
+  db: { ok: boolean; error?: string; canConnect?: boolean; postgresUrlSource?: string };
   pgvector: { ok: boolean; error?: string };
   vectors: { count: number; index: string | null; needsTuning: boolean };
   models: {
@@ -121,7 +127,15 @@ export type DoctorReport = {
     estimatedDailyCapRemaining: number;
     warning80Percent: boolean;
   };
+  scaffold: Awaited<ReturnType<typeof checkProjectScaffold>>;
   config: Awaited<ReturnType<typeof checkConfigPermissions>>;
+  namespace: {
+    expectedDefault: string;
+    configured: string | null;
+    runtime: string | null;
+    ok: boolean;
+    warning?: string;
+  };
 };
 
 export async function runDoctor(
@@ -132,20 +146,93 @@ export async function runDoctor(
     skipModelCheck?: boolean;
   } = {},
 ): Promise<DoctorReport> {
-  const config = options.config ?? (await loadRuntimeConfig());
+  const fileConfig = await readConfigFile();
+  const scaffold = await checkProjectScaffold();
+  const configPermissions = await checkConfigPermissions();
+  const expectedDefaultNamespace =
+    process
+      .cwd()
+      .split(/[/\\]/)
+      .at(-1)
+      ?.replace(/[^a-zA-Z0-9_.:-]/g, "-")
+      .slice(0, 128) || "default";
+  const runtimeNamespace =
+    process.env.CODEBUDDY_NAMESPACE ?? fileConfig.namespace ?? options.config?.namespace ?? null;
+  const namespaceReport: DoctorReport["namespace"] = {
+    expectedDefault: expectedDefaultNamespace,
+    configured: fileConfig.namespace ?? null,
+    runtime: runtimeNamespace,
+    ok:
+      !fileConfig.namespace ||
+      fileConfig.namespace === expectedDefaultNamespace ||
+      process.env.CODEBUDDY_NAMESPACE !== undefined,
+    ...(!fileConfig.namespace ||
+    fileConfig.namespace === expectedDefaultNamespace ||
+    process.env.CODEBUDDY_NAMESPACE !== undefined
+      ? {}
+      : {
+          warning: `Configured namespace "${fileConfig.namespace}" differs from this folder's default "${expectedDefaultNamespace}". Confirm your MCP entries point at the intended namespace.`,
+        }),
+  };
+
+  let config = options.config;
+  if (!config) {
+    try {
+      config = await loadRuntimeConfig();
+    } catch (error) {
+      const message = String(redactSecrets((error as Error).message));
+      return {
+        db: {
+          ok: false,
+          error: message,
+          canConnect: false,
+          postgresUrlSource: "missing",
+        },
+        pgvector: { ok: false, error: "Postgres is not configured yet." },
+        vectors: { count: 0, index: null, needsTuning: false },
+        models: await checkModels(options.provider, true),
+        usage: {
+          last60s: 0,
+          lastHour: 0,
+          last24h: 0,
+          estimatedDailyCapRemaining: 10_000,
+          warning80Percent: false,
+        },
+        scaffold,
+        config: configPermissions,
+        namespace: namespaceReport,
+      };
+    }
+  }
+
   let repository = options.repository;
   let close: (() => Promise<void>) | undefined;
   let db = { ok: true } as DoctorReport["db"];
   let pgvector = { ok: true } as DoctorReport["pgvector"];
 
   if (!repository) {
+    const postgresUrlSource =
+      options.config?.postgresUrl !== undefined
+        ? "explicit"
+        : process.env.DATABASE_URL
+          ? "environment"
+          : fileConfig.postgresUrl
+            ? "config"
+            : "missing";
     const client = createDatabaseClient({ postgresUrl: config.postgresUrl });
     repository = createPostgresRepository(client);
     close = () => client.close();
     try {
-      db = { ok: await pingDatabase(client) };
+      const canConnect = await pingDatabase(client);
+      db = { ok: canConnect, canConnect, postgresUrlSource };
+      if (!canConnect) db.error = "Postgres did not respond to a simple ping.";
     } catch (error) {
-      db = { ok: false, error: String(redactSecrets((error as Error).message)) };
+      db = {
+        ok: false,
+        canConnect: false,
+        postgresUrlSource,
+        error: String(redactSecrets((error as Error).message)),
+      };
     }
     try {
       const health = await checkPgvector(client.sql);
@@ -172,7 +259,9 @@ export async function runDoctor(
           estimatedDailyCapRemaining: 10_000,
           warning80Percent: false,
         },
-        config: await checkConfigPermissions(),
+        scaffold,
+        config: configPermissions,
+        namespace: namespaceReport,
       };
     }
     const namespace = await repository.ensureNamespace(config.namespace);
@@ -199,7 +288,9 @@ export async function runDoctor(
         estimatedDailyCapRemaining: Math.max(0, dailyCap - used),
         warning80Percent: used >= dailyCap * 0.8,
       },
-      config: await checkConfigPermissions(),
+      scaffold,
+      config: configPermissions,
+      namespace: namespaceReport,
     };
   } finally {
     await close?.();

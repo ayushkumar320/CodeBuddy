@@ -6,6 +6,7 @@ import type { CodeBuddyConfig } from "./types.js";
 
 export const CONFIG_DIR = ".codebuddy";
 export const CONFIG_FILE = "config.json";
+export const POLICY_FILE = "policies.yaml";
 
 const PROJECT_GITIGNORE = [
   "# CodeBuddy local-only files",
@@ -19,6 +20,15 @@ const PROJECT_GITIGNORE = [
   "#   /memory/summaries/*.md",
   "#   /plans/*.md",
   "# If your project memory is private, ignore /memory/ in the repo root .gitignore.",
+  "",
+].join("\n");
+
+const DEFAULT_POLICY_FILE = [
+  "rules:",
+  "  - id: auth-sensitive",
+  '    pattern: "src/auth/**"',
+  '    message: "Auth changes need careful review."',
+  "    weight: 70",
   "",
 ].join("\n");
 
@@ -59,6 +69,15 @@ export type ConfigPermissionReport = {
   warning?: string;
 };
 
+export type ProjectScaffoldReport = {
+  codebuddyDir: { path: string; exists: boolean; ok: boolean; warning?: string };
+  memoryFactsDir: { path: string; exists: boolean; ok: boolean; warning?: string };
+  memorySummariesDir: { path: string; exists: boolean; ok: boolean; warning?: string };
+  plansDir: { path: string; exists: boolean; ok: boolean; warning?: string };
+  gitignore: { path: string; exists: boolean; ok: boolean; warning?: string };
+  policies: { path: string; exists: boolean; ok: boolean; warning?: string };
+};
+
 export function configPath(cwd = process.cwd()): string {
   return join(cwd, CONFIG_DIR, CONFIG_FILE);
 }
@@ -66,6 +85,7 @@ export function configPath(cwd = process.cwd()): string {
 export async function initProjectScaffold(cwd = process.cwd()): Promise<{
   codebuddyDir: string;
   gitignorePath: string;
+  policyPath: string;
 }> {
   const codebuddyDir = join(cwd, CONFIG_DIR);
   await mkdir(join(codebuddyDir, "memory", "facts"), { recursive: true, mode: 0o700 });
@@ -79,7 +99,14 @@ export async function initProjectScaffold(cwd = process.cwd()): Promise<{
     await writeFile(gitignorePath, PROJECT_GITIGNORE, { mode: 0o644 });
   }
 
-  return { codebuddyDir, gitignorePath };
+  const policyPath = join(codebuddyDir, POLICY_FILE);
+  try {
+    await access(policyPath, constants.F_OK);
+  } catch {
+    await writeFile(policyPath, DEFAULT_POLICY_FILE, { mode: 0o644 });
+  }
+
+  return { codebuddyDir, gitignorePath, policyPath };
 }
 
 export async function initConfigFile(
@@ -156,6 +183,79 @@ export async function checkConfigPermissions(cwd = process.cwd()): Promise<Confi
   }
 }
 
+export async function checkProjectScaffold(cwd = process.cwd()): Promise<ProjectScaffoldReport> {
+  const codebuddyDir = join(cwd, CONFIG_DIR);
+  const memoryFactsDir = join(codebuddyDir, "memory", "facts");
+  const memorySummariesDir = join(codebuddyDir, "memory", "summaries");
+  const plansDir = join(codebuddyDir, "plans");
+  const gitignorePath = join(codebuddyDir, ".gitignore");
+  const policyPath = join(codebuddyDir, POLICY_FILE);
+
+  const [
+    codebuddyDirExists,
+    memoryFactsDirExists,
+    memorySummariesDirExists,
+    plansDirExists,
+    gitignoreExists,
+    policiesExist,
+  ] = await Promise.all([
+    pathExists(codebuddyDir),
+    pathExists(memoryFactsDir),
+    pathExists(memorySummariesDir),
+    pathExists(plansDir),
+    pathExists(gitignorePath),
+    pathExists(policyPath),
+  ]);
+
+  return {
+    codebuddyDir: {
+      path: codebuddyDir,
+      exists: codebuddyDirExists,
+      ok: codebuddyDirExists,
+      ...(codebuddyDirExists
+        ? {}
+        : { warning: "Run `codebuddy use` or `codebuddy init` to create the project scaffold." }),
+    },
+    memoryFactsDir: {
+      path: memoryFactsDir,
+      exists: memoryFactsDirExists,
+      ok: memoryFactsDirExists,
+      ...(memoryFactsDirExists ? {} : { warning: "Missing .codebuddy/memory/facts directory." }),
+    },
+    memorySummariesDir: {
+      path: memorySummariesDir,
+      exists: memorySummariesDirExists,
+      ok: memorySummariesDirExists,
+      ...(memorySummariesDirExists
+        ? {}
+        : { warning: "Missing .codebuddy/memory/summaries directory." }),
+    },
+    plansDir: {
+      path: plansDir,
+      exists: plansDirExists,
+      ok: plansDirExists,
+      ...(plansDirExists ? {} : { warning: "Missing .codebuddy/plans directory." }),
+    },
+    gitignore: {
+      path: gitignorePath,
+      exists: gitignoreExists,
+      ok: gitignoreExists,
+      ...(gitignoreExists ? {} : { warning: "Missing .codebuddy/.gitignore." }),
+    },
+    policies: {
+      path: policyPath,
+      exists: policiesExist,
+      ok: policiesExist,
+      ...(policiesExist
+        ? {}
+        : {
+            warning:
+              "Missing .codebuddy/policies.yaml. Run `codebuddy use` or `codebuddy init` to scaffold it.",
+          }),
+    },
+  };
+}
+
 /** Read the plan policy, honoring CODEBUDDY_PLAN_POLICY then the config file. */
 export async function loadPlanPolicy(cwd = process.cwd()): Promise<PlanPolicy> {
   const fromEnv = process.env.CODEBUDDY_PLAN_POLICY;
@@ -189,4 +289,13 @@ export function redactSecrets(value: unknown): unknown {
       /token|apiKey|authorization|secret/i.test(key) ? "[REDACTED]" : redactSecrets(nested),
     ]),
   );
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }

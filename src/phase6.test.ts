@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import {
   checkConfigPermissions,
   initConfigFile,
   initProjectScaffold,
+  readConfigFile,
   redactSecrets,
 } from "./core/config-file.js";
 import { InMemoryMemoryRepository } from "./core/in-memory-repository.js";
@@ -109,9 +110,12 @@ describe("Phase 6 config and doctor", () => {
       expect(await stat(join(dir, ".codebuddy", "memory", "summaries"))).toBeTruthy();
       expect(await stat(join(dir, ".codebuddy", "plans"))).toBeTruthy();
       const gitignore = await readFile(result.gitignorePath, "utf8");
+      const policy = await readFile(result.policyPath, "utf8");
       expect(gitignore).toContain("/config.json");
       expect(gitignore).toContain("/plans/.locks/");
       expect(gitignore).toContain("/memory/facts/*.md");
+      expect(policy).toContain("auth-sensitive");
+      expect(policy).toContain('pattern: "src/auth/**"');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -125,6 +129,8 @@ describe("Phase 6 config and doctor", () => {
       expect((info.mode & 0o777).toString(8)).toBe("600");
       const permissions = await checkConfigPermissions(dir);
       expect(permissions.ok).toBe(true);
+      const file = await readConfigFile(dir);
+      expect(file.provider?.type).toBe("huggingface");
       process.env.HF_TOKEN = "hf_secret";
       expect(redactSecrets({ token: "hf_secret", message: "use hf_secret" })).toEqual({
         token: "[REDACTED]",
@@ -151,5 +157,43 @@ describe("Phase 6 config and doctor", () => {
     expect(report.db.ok).toBe(true);
     expect(report.pgvector.ok).toBe(true);
     expect(report.models.every((model) => model.reachable)).toBe(true);
+  });
+
+  it("reports missing scaffold and missing database config clearly", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "codebuddy-"));
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(dir);
+      const report = await runDoctor({ skipModelCheck: true });
+      expect(report.db.ok).toBe(false);
+      expect(report.db.postgresUrlSource).toBe("missing");
+      expect(report.scaffold.codebuddyDir.ok).toBe(false);
+      expect(report.scaffold.policies.ok).toBe(false);
+      expect(report.db.error).toContain("postgresUrl is required");
+    } finally {
+      process.chdir(previousCwd);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("warns when configured namespace differs from the folder default", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "doctor-check-"));
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(dir);
+      await initConfigFile(dir);
+      await rm(join(dir, ".codebuddy", "policies.yaml"), { force: true });
+      const configPath = join(dir, ".codebuddy", "config.json");
+      const parsed = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+      parsed.namespace = "custom-namespace";
+      await writeFile(configPath, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 });
+      const report = await runDoctor({ skipModelCheck: true });
+      expect(report.namespace.ok).toBe(false);
+      expect(report.namespace.warning).toContain("Configured namespace");
+      expect(report.scaffold.policies.ok).toBe(false);
+    } finally {
+      process.chdir(previousCwd);
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -129,6 +129,31 @@ export function createCli(): Command {
         }
       });
     });
+
+  const db = program.command("db").description("Check database connectivity and setup health.");
+  db.command("doctor")
+    .description("Check Postgres reachability, pgvector, and namespace assumptions.")
+    .action(async () => {
+      await runSafely(async () => {
+        const report = await runDoctor({ skipModelCheck: true });
+        printDbDoctor(report);
+        if (!report.db.ok || !report.pgvector.ok || !report.namespace.ok) process.exitCode = 1;
+      });
+    });
+  db.command("test")
+    .description("Run a simple database connectivity test.")
+    .action(async () => {
+      await runSafely(async () => {
+        const report = await runDoctor({ skipModelCheck: true });
+        if (!report.db.ok) {
+          console.log("database test: fail");
+          if (report.db.error) console.log(`  ${report.db.error}`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log("database test: ok");
+      });
+    });
   postgres
     .command("down")
     .description("Stop the bundled Postgres container (data volume preserved).")
@@ -344,7 +369,16 @@ export function createCli(): Command {
       await runSafely(async () => {
         const report = await runDoctor({ skipModelCheck: opts.skipModelCheck ?? true });
         printDoctor(report);
-        if (!report.db.ok || !report.pgvector.ok || report.config.warning) process.exitCode = 1;
+        if (
+          !report.db.ok ||
+          !report.pgvector.ok ||
+          report.config.warning ||
+          !report.scaffold.policies.ok ||
+          !report.scaffold.codebuddyDir.ok ||
+          !report.namespace.ok
+        ) {
+          process.exitCode = 1;
+        }
       });
     });
 
@@ -404,10 +438,21 @@ function parseDuration(value: string): number {
 function printDoctor(report: Awaited<ReturnType<typeof runDoctor>>) {
   const ok = pc.green("ok");
   const bad = pc.red("fail");
+  const warn = pc.yellow("warn");
+  console.log(`scaffold root: ${report.scaffold.codebuddyDir.ok ? ok : bad}`);
+  if (report.scaffold.codebuddyDir.warning)
+    console.log(`  ${report.scaffold.codebuddyDir.warning}`);
+  console.log(`policy scaffold: ${report.scaffold.policies.ok ? ok : bad}`);
+  if (report.scaffold.policies.warning) console.log(`  ${report.scaffold.policies.warning}`);
   console.log(`DB connectivity: ${report.db.ok ? ok : bad}`);
   if (report.db.error) console.log(`  ${report.db.error}`);
   console.log(`pgvector: ${report.pgvector.ok ? ok : bad}`);
   if (report.pgvector.error) console.log(`  ${report.pgvector.error}`);
+  console.log(`namespace: ${report.namespace.ok ? ok : warn}`);
+  console.log(
+    `  runtime=${report.namespace.runtime ?? "unset"} default=${report.namespace.expectedDefault}`,
+  );
+  if (report.namespace.warning) console.log(`  ${report.namespace.warning}`);
   console.log(
     `vectors: ${report.vectors.count} index=${report.vectors.index ?? "missing"} tuning=${report.vectors.needsTuning ? "recommended" : "not-needed"}`,
   );
@@ -418,12 +463,26 @@ function printDoctor(report: Awaited<ReturnType<typeof runDoctor>>) {
   if (report.usage.warning80Percent)
     console.log(pc.yellow("usage warning: daily cap is over 80% used"));
   console.log(
-    `config permissions: ${report.config.exists ? report.config.mode : "missing"} ${report.config.ok ? ok : pc.yellow("warn")}`,
+    `config permissions: ${report.config.exists ? report.config.mode : "missing"} ${report.config.ok ? ok : warn}`,
   );
   if (report.config.warning) console.log(`  ${report.config.warning}`);
   for (const model of report.models) {
     console.log(`model ${model.id}: ${model.status}${model.error ? ` (${model.error})` : ""}`);
   }
+}
+
+function printDbDoctor(report: Awaited<ReturnType<typeof runDoctor>>) {
+  const ok = pc.green("ok");
+  const bad = pc.red("fail");
+  const warn = pc.yellow("warn");
+  console.log(`DB connectivity: ${report.db.ok ? ok : bad}`);
+  if (report.db.postgresUrlSource) console.log(`  url source: ${report.db.postgresUrlSource}`);
+  if (report.db.error) console.log(`  ${report.db.error}`);
+  console.log(`pgvector: ${report.pgvector.ok ? ok : bad}`);
+  if (report.pgvector.error) console.log(`  ${report.pgvector.error}`);
+  console.log(`namespace: ${report.namespace.ok ? ok : warn}`);
+  console.log(`  runtime=${report.namespace.runtime ?? "unset"}`);
+  if (report.namespace.warning) console.log(`  ${report.namespace.warning}`);
 }
 
 createCli().parseAsync();

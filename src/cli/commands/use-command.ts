@@ -217,14 +217,17 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
     note(
       [
         `${pc.green("✓")} CodeBuddy is ready for ${pc.bold(folderName)}.`,
+        `${pc.green("✓")} Scaffolded ${pc.cyan(".codebuddy/policies.yaml")} for project-specific guardrails.`,
         ``,
         `Next:`,
         `  1. Restart Claude Desktop and Codex.`,
         `  2. Ask Claude or Codex to "remember" or "recall" — it will use the ${pc.cyan(`codebuddy-${namespace}`)} tools automatically.`,
+        `  3. Run ${pc.cyan("codebuddy doctor")} or ${pc.cyan("codebuddy db doctor")} if you want a full health check.`,
         ``,
         `Manage:`,
         `  codebuddy claude list           ${pc.dim("# see every project wired up")}`,
         `  codebuddy codex list            ${pc.dim("# see Codex entries")}`,
+        `  codebuddy db test               ${pc.dim("# quick Postgres connectivity check")}`,
         `  codebuddy claude remove codebuddy-${namespace}`,
         `  codebuddy codex remove codebuddy-${namespace}`,
         `  codebuddy postgres down         ${pc.dim("# stop the DB (data preserved)")}`,
