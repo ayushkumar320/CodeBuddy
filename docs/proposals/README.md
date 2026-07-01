@@ -11,7 +11,9 @@ In Progress → Shipped → Superseded.
 
 ## Active proposals
 
-No active proposal docs remain in this folder.
+| # | Title | Status | Target | Owner |
+|---|---|---|---|---|
+| [04](./04-automatic-context-engine.md) | Automatic Context Engine | Draft | v2.0.0 | @ayushkumar320 |
 
 Shipped proposal docs are removed from this folder once their behavior is
 captured in the user/developer docs. Current shipped foundations:
@@ -42,8 +44,15 @@ Markdown memory + plans ──▶ Risk Panel MVP
 
 ## Execution order
 
-Future proposal work should focus on v2.0 automatic context capture, token
-savings, project indexing, and code-quality suggestions.
+Recommended next proposal execution:
+
+1. Build Proposal 04 Phase 1: setup hardening and trust checks.
+2. Build Proposal 04 Phase 2: `context_bootstrap` and `context_before_edit`.
+3. Build Proposal 04 Phase 3: background indexing and summaries.
+4. Build Proposal 04 Phase 4: automatic memory extraction and review queue.
+
+Detailed execution packets and Codex/Claude prompts live under
+[`docs/build/`](../build/README.md).
 
 ## Conventions for new proposals
 
