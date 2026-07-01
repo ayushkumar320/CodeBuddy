@@ -11,6 +11,7 @@ import type { RecallInput, RememberInput } from "../../core/types.js";
 import { buildArchitectureMap, neighbours, queryMap } from "../../map/indexer.js";
 import { captureAfterTurn } from "../../memory-extract/engine.js";
 import { assessRisk } from "../../risk/service.js";
+import { generateSuggestions } from "../../suggest/engine.js";
 
 const rememberSchema = {
   sessionId: z.string().optional(),
@@ -114,6 +115,12 @@ export const mcpToolInputSchemas = {
     planId: z.string().min(1).optional(),
     taskType: z.string().min(1).optional(),
     agentId: z.string().optional(),
+  }),
+  code_suggestions: z.object({
+    paths: z.array(z.string().min(1)).optional(),
+    planId: z.string().min(1).optional(),
+    useGit: z.boolean().optional(),
+    limit: z.number().int().positive().max(100).optional(),
   }),
 } as const;
 
@@ -461,6 +468,27 @@ export function registerCodeBuddyTools(server: McpServer, options: RegisterCodeB
         extractor: result.extractor,
       });
     },
+  );
+
+  server.registerTool(
+    "code_suggestions",
+    {
+      title: "Code suggestions",
+      description:
+        "Return read-only, evidence-backed code-quality suggestions for a change set (paths, a plan, or git). Composes risk, plan divergence, architecture blast radius, incident history, missing tests, and stale policies. Never edits code.",
+      inputSchema: mcpToolInputSchemas.code_suggestions.shape,
+    },
+    async (input) =>
+      json(
+        await generateSuggestions({
+          repositoryRoot: projectRoot,
+          namespace,
+          ...(input.paths !== undefined ? { paths: input.paths } : {}),
+          ...(input.planId !== undefined ? { planId: input.planId } : {}),
+          ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        }),
+      ),
   );
 }
 

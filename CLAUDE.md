@@ -43,6 +43,9 @@ Always run typecheck + lint + tests before considering a change done.
   `packer` (highest-priority evidence survives), `summaries` (project/directory rollups),
   and `engine` (`computeSavings`/`computeRepoSavings`, file capsules). Baseline = raw
   source of represented files; measured against the compact payload. No fabricated numbers.
+- `suggest/` — **Phase 04.6** read-only suggestion engine: `generateSuggestions` composes
+  risk, plan divergence, architecture blast radius, incident history, missing tests, and
+  stale policies into evidence-backed, severity-ranked findings. Never edits code.
 - `planner/`, `providers/`, `langgraph/` — budget/policy, HF adapter, LangGraph node.
 - `cli/` — commander CLI; `commands/*` register subcommands via `register*Commands(program, runSafely)`.
 
@@ -86,8 +89,11 @@ Phase status:
   tools, `codebuddy savings`, enriched `codebuddy context explain`. Baseline = raw
   source of represented files (from the 04.3 manifest, with a read fallback); savings
   clamped, never fabricated.
-- ⏭️ 04.6 Suggestion engine — next.
-- ⏳ 04.7 Client workflow templates · 04.8 Release hardening.
+- ✅ 04.6 Suggestion engine — `codebuddy suggest` + `code_suggestions` MCP tool,
+  `src/suggest/`. Read-only, evidence-backed, severity-ranked; composes risk, plan
+  divergence, architecture, incidents, missing tests, stale policies. No auto-fix.
+- ⏭️ 04.7 Client workflow templates — next.
+- ⏳ 04.8 Release hardening.
 
 ## Gotchas
 
