@@ -32,6 +32,9 @@ Always run typecheck + lint + tests before considering a change done.
 - `risk/` — evidence-backed risk assessor + signals (incident, policy, churn). No LLM.
 - `map/` — lightweight import-graph architecture map (regex import extraction).
 - `context/` — **Phase 04.2** context engine (`engine.ts`, `types.ts`).
+- `indexer/` — **Phase 04.3** background indexer: `scan` (gitignore-aware), deterministic
+  `summary`, incremental `engine`, `watch` coalescer. Manifest cached at
+  `.codebuddy/cache/index.json` (gitignored, rebuildable — not a source of truth).
 - `planner/`, `providers/`, `langgraph/` — budget/policy, HF adapter, LangGraph node.
 - `cli/` — commander CLI; `commands/*` register subcommands via `register*Commands(program, runSafely)`.
 
@@ -63,8 +66,10 @@ Phase status:
 - ✅ 04.2 Context bootstrap & before-edit retrieval — `context_bootstrap` +
   `context_before_edit` MCP tools, `codebuddy context bootstrap|preview|explain`
   CLI, shared engine in `src/context/`.
-- ⏭️ 04.3 Background indexing (`codebuddy index` / `watch`) — next.
-- ⏳ 04.4 Automatic memory extraction + review queue.
+- ✅ 04.3 Background indexing — `codebuddy index [--full]` + `codebuddy watch`,
+  `src/indexer/`. Gitignore-aware scan, content hashes, deterministic summaries,
+  incremental refresh, coalesced watch. No LLM, no hidden daemon.
+- ⏭️ 04.4 Automatic memory extraction + review queue — next.
 - ⏳ 04.5 Token savings engine (fills in the savings placeholders).
 - ⏳ 04.6 Suggestion engine · 04.7 Client workflow templates · 04.8 Release hardening.
 
