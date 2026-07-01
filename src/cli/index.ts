@@ -15,11 +15,15 @@ import {
   removeClaudeEntry,
 } from "./commands/claude-desktop.js";
 import { installCodexEntry, listCodexEntries, removeCodexEntry } from "./commands/codex.js";
+import { registerContextCommands } from "./commands/context.js";
+import { registerIndexCommands } from "./commands/indexing.js";
 import { runInitWizard } from "./commands/init-wizard.js";
 import { registerMapCommands } from "./commands/map.js";
+import { registerMemoryCommands } from "./commands/memory-review.js";
 import { registerPlanCommands } from "./commands/plan.js";
 import { postgresDown, postgresStatus, postgresUp } from "./commands/postgres-docker.js";
 import { registerRiskCommands } from "./commands/risk.js";
+import { registerSavingsCommand } from "./commands/savings.js";
 import { runUseCommand } from "./commands/use-command.js";
 
 export function createCli(): Command {
@@ -399,6 +403,10 @@ export function createCli(): Command {
   registerPlanCommands(program, runSafely);
   registerRiskCommands(program, runSafely);
   registerMapCommands(program, runSafely);
+  registerContextCommands(program, runSafely);
+  registerIndexCommands(program, runSafely);
+  registerMemoryCommands(program, runSafely);
+  registerSavingsCommand(program, runSafely);
 
   return program;
 }

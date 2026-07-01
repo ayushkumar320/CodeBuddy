@@ -167,6 +167,30 @@ export class MemoryFileStore {
     }
   }
 
+  /**
+   * List incident facts for the namespace, ranked by severity then recency.
+   * Unlike {@link findIncidentFactsForPaths} this does not filter by path, so
+   * callers (e.g. the context engine's project bootstrap) can surface the
+   * repository's incident hotspots before any specific edit target is known.
+   */
+  async listIncidentFacts(
+    input: { namespace?: string; includeResolved?: boolean } = {},
+  ): Promise<IncidentFactFile[]> {
+    const incidents = (await this.listFacts()).filter((fact): fact is IncidentFactFile => {
+      if (fact.category !== "incident") return false;
+      if (!fact.severity) return false;
+      if (input.namespace && fact.namespace !== input.namespace) return false;
+      if (!input.includeResolved && fact.resolvedBy) return false;
+      return true;
+    });
+
+    return incidents.sort((left, right) => {
+      const severity = severityRank(right.severity) - severityRank(left.severity);
+      if (severity !== 0) return severity;
+      return right.createdAt.localeCompare(left.createdAt);
+    });
+  }
+
   async findIncidentFactsForPaths(input: {
     namespace?: string;
     paths: string[];
@@ -175,19 +199,12 @@ export class MemoryFileStore {
     const wanted = new Set(input.paths.map(normalizeMemoryPath));
     if (wanted.size === 0) return [];
 
-    const incidents = (await this.listFacts()).filter((fact): fact is IncidentFactFile => {
-      if (fact.category !== "incident") return false;
-      if (!fact.severity) return false;
-      if (input.namespace && fact.namespace !== input.namespace) return false;
-      if (!input.includeResolved && fact.resolvedBy) return false;
-      return fact.paths.map(normalizeMemoryPath).some((path) => wanted.has(path));
-    });
-
-    return incidents.sort((left, right) => {
-      const severity = severityRank(right.severity) - severityRank(left.severity);
-      if (severity !== 0) return severity;
-      return right.createdAt.localeCompare(left.createdAt);
-    });
+    return (
+      await this.listIncidentFacts({
+        ...(input.namespace !== undefined ? { namespace: input.namespace } : {}),
+        ...(input.includeResolved !== undefined ? { includeResolved: input.includeResolved } : {}),
+      })
+    ).filter((fact) => fact.paths.map(normalizeMemoryPath).some((path) => wanted.has(path)));
   }
 
   async readSummary(pathOrId: string): Promise<SummaryFile> {

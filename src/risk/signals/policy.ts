@@ -41,7 +41,7 @@ export function createPolicySignal(options: PolicySignalOptions): Signal {
       const byPath = new Map<string, SignalContribution>();
       for (const path of input.paths) {
         for (const rule of policy.rules) {
-          if (!matchesGlob(path, rule.pattern)) continue;
+          if (!matchesPolicyGlob(path, rule.pattern)) continue;
           const existing = byPath.get(path);
           const evidence = { kind: "policy_rule" as const, ruleId: rule.id, pattern: rule.pattern };
           const reason = rule.message ?? rule.reason ?? `Policy rule ${rule.id} matched ${path}.`;
@@ -74,7 +74,8 @@ export async function readPolicyFile(path: string): Promise<PolicyFile> {
   }
 }
 
-function matchesGlob(path: string, glob: string): boolean {
+/** Match a repo-relative path against a simple `*` / `**` glob pattern. */
+export function matchesPolicyGlob(path: string, glob: string): boolean {
   const normalizedPath = normalize(path);
   const normalizedGlob = normalize(glob);
   const pattern = normalizedGlob
