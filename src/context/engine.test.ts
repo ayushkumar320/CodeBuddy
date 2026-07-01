@@ -85,7 +85,9 @@ describe("buildBootstrapContext", () => {
     expect(ctx.architecture.moduleCount).toBeGreaterThan(0);
     expect(ctx.architecture.edgeCount).toBeGreaterThan(0);
     expect(ctx.tokens.returnedEstimate).toBeGreaterThan(0);
-    expect(ctx.tokens.savings.available).toBe(false);
+    // Architecture hotspots are represented, so savings is measurable.
+    expect(ctx.tokens.savings.available).toBe(true);
+    expect(ctx.tokens.savings.savedTokens).toBeGreaterThanOrEqual(0);
     expect(ctx.explain.length).toBeGreaterThan(0);
   });
 

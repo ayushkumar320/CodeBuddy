@@ -23,6 +23,7 @@ import { registerMemoryCommands } from "./commands/memory-review.js";
 import { registerPlanCommands } from "./commands/plan.js";
 import { postgresDown, postgresStatus, postgresUp } from "./commands/postgres-docker.js";
 import { registerRiskCommands } from "./commands/risk.js";
+import { registerSavingsCommand } from "./commands/savings.js";
 import { runUseCommand } from "./commands/use-command.js";
 
 export function createCli(): Command {
@@ -405,6 +406,7 @@ export function createCli(): Command {
   registerContextCommands(program, runSafely);
   registerIndexCommands(program, runSafely);
   registerMemoryCommands(program, runSafely);
+  registerSavingsCommand(program, runSafely);
 
   return program;
 }

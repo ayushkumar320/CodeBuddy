@@ -11,6 +11,7 @@ import type { PlanPolicy } from "../core/config-file.js";
 import type { IncidentSeverity } from "../core/memory-file-store.js";
 import type { PlanStatus } from "../core/plan-file-store.js";
 import type { Assessment } from "../risk/types.js";
+import type { SavingsStats } from "../savings/types.js";
 
 /** Where the caller/derived target paths came from, for explainability. */
 export type PathSource = "paths" | "plan" | "git" | "none";
@@ -68,17 +69,14 @@ export type ModuleNeighbours = {
 };
 
 /**
- * Token accounting surface. Phase 04.2 only estimates the size of what it
- * returns; the real savings engine (Phase 04.5) fills in the rest. The
- * placeholder is explicit rather than a fabricated number.
+ * Token accounting surface. `returnedEstimate` is the size of this payload;
+ * `savings` (Phase 04.5) measures it against the cost of reading the represented
+ * files' raw source.
  */
 export type TokenStats = {
   budget: number;
   returnedEstimate: number;
-  savings: {
-    available: false;
-    note: string;
-  };
+  savings: SavingsStats;
 };
 
 export type BootstrapContext = {

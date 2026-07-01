@@ -94,6 +94,17 @@ export function registerContextCommands(
         const result = await runBeforeEdit(taskParts, opts);
         console.log(pc.bold(`context for ${result.targetPaths.length} target path(s):`));
         for (const line of result.explain) console.log(`  ${pc.dim("•")} ${line}`);
+        const savings = result.tokens.savings;
+        if (savings.available) {
+          const percent = Math.round((1 - savings.compressionRatio) * 100);
+          console.log(pc.bold("\nsavings:"));
+          console.log(
+            `  ${pc.green(`${savings.savedTokens} tokens saved`)} ${pc.dim(`(${percent}% vs reading ${savings.representedFiles} raw file(s): ${savings.baselineTokens} → ${savings.returnedTokens})`)}`,
+          );
+          for (const stage of savings.stages) {
+            console.log(`  ${pc.dim("•")} ${stage.stage}: ${stage.returnedTokens} tokens`);
+          }
+        }
       });
     });
 }
@@ -176,11 +187,13 @@ function printBeforeEdit(ctx: BeforeEditContext): void {
 }
 
 function printTokens(ctx: BootstrapContext | BeforeEditContext): void {
-  console.log(
-    pc.dim(
-      `\n~${ctx.tokens.returnedEstimate} tokens returned (budget ${ctx.tokens.budget}); savings stats land in a later phase`,
-    ),
-  );
+  const { returnedEstimate, budget, savings } = ctx.tokens;
+  let line = `\n~${returnedEstimate} tokens returned (budget ${budget})`;
+  if (savings.available) {
+    const percent = Math.round((1 - savings.compressionRatio) * 100);
+    line += `; saved ~${savings.savedTokens} vs raw source (${percent}% smaller)`;
+  }
+  console.log(pc.dim(line));
 }
 
 function severityColor(severity: string): string {

@@ -39,6 +39,10 @@ Always run typecheck + lint + tests before considering a change done.
   (no-LLM baseline), `llm` validation/retry wrapper, `sensitive` scan, `review-store`,
   and `engine` (gating + `captureAfterTurn`/`approveReviewItem`). Review queue at
   `.codebuddy/memory/review/`.
+- `savings/` — **Phase 04.5** token savings: shared `tokens` estimator, budget-aware
+  `packer` (highest-priority evidence survives), `summaries` (project/directory rollups),
+  and `engine` (`computeSavings`/`computeRepoSavings`, file capsules). Baseline = raw
+  source of represented files; measured against the compact payload. No fabricated numbers.
 - `planner/`, `providers/`, `langgraph/` — budget/policy, HF adapter, LangGraph node.
 - `cli/` — commander CLI; `commands/*` register subcommands via `register*Commands(program, runSafely)`.
 
@@ -78,8 +82,12 @@ Phase status:
   Confident facts/decisions/incidents auto-save; notes, low-confidence, and sensitive
   items queue for review; chatter is dropped. Deterministic by default; LLM extraction
   is optional and strictly validated. Bias: prefer a missed memory over a false fact.
-- ⏭️ 04.5 Token savings engine (fills in the savings placeholders) — next.
-- ⏳ 04.6 Suggestion engine · 04.7 Client workflow templates · 04.8 Release hardening.
+- ✅ 04.5 Token savings engine — `src/savings/`, real `SavingsStats` in the context
+  tools, `codebuddy savings`, enriched `codebuddy context explain`. Baseline = raw
+  source of represented files (from the 04.3 manifest, with a read fallback); savings
+  clamped, never fabricated.
+- ⏭️ 04.6 Suggestion engine — next.
+- ⏳ 04.7 Client workflow templates · 04.8 Release hardening.
 
 ## Gotchas
 

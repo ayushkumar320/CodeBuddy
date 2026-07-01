@@ -7,6 +7,9 @@ import { buildArchitectureMap } from "../map/indexer.js";
 import type { ArchitectureMap } from "../map/types.js";
 import { assessRisk, resolveRiskPaths } from "../risk/service.js";
 import { matchesPolicyGlob, type PolicyRule, readPolicyFile } from "../risk/signals/policy.js";
+import { computeSavings } from "../savings/engine.js";
+import { estimateTokens } from "../savings/tokens.js";
+import type { StageStat } from "../savings/types.js";
 import type {
   ArchitectureSummary,
   BeforeEditContext,
@@ -35,8 +38,6 @@ const LIMITS = {
 } as const;
 
 const DEFAULT_TOKEN_BUDGET = 4_000;
-const SAVINGS_PLACEHOLDER =
-  "Token savings accounting arrives in Phase 04.5; returnedEstimate reflects this payload only.";
 
 export type BootstrapInput = {
   repositoryRoot?: string;
@@ -101,7 +102,13 @@ export async function buildBootstrapContext(input: BootstrapInput): Promise<Boot
     architecture,
     explain,
   };
-  return { ...partial, tokens: buildTokenStats(partial, input.tokenBudget) };
+  const tokens = await buildTokenStats(
+    repositoryRoot,
+    partial,
+    architecture.hotspots.map((hotspot) => hotspot.path),
+    input.tokenBudget,
+  );
+  return { ...partial, tokens };
 }
 
 /**
@@ -175,7 +182,21 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
     neighbours,
     explain,
   };
-  return { ...partial, tokens: buildTokenStats(partial, input.tokenBudget) };
+  // The context stands in for the target files and their import neighbours —
+  // exactly what an agent would otherwise open and read.
+  const representedPaths = [
+    ...new Set([
+      ...targetPaths,
+      ...neighbours.flatMap((n) => [n.path, ...n.dependsOn, ...n.dependedOnBy]),
+    ]),
+  ];
+  const tokens = await buildTokenStats(
+    repositoryRoot,
+    partial,
+    representedPaths,
+    input.tokenBudget,
+  );
+  return { ...partial, tokens };
 }
 
 // ── helpers ─────────────────────────────────────────────────────────
@@ -298,18 +319,40 @@ function classifyPathSource(input: BeforeEditInput, resolvedCount: number): Path
 }
 
 /**
- * Estimate the token footprint of everything the tool returns except the token
- * stats themselves (~4 characters per token). This is deliberately rough — it
- * exists so future packing can measure payloads, not to bill anyone.
+ * Estimate the payload's token footprint and measure it against the cost of
+ * reading the represented files' raw source (Phase 04.5). `representedPaths` are
+ * the files this context stands in for — target files and import neighbours —
+ * which is exactly what an agent would otherwise open and read.
  */
-function buildTokenStats(payload: unknown, tokenBudget?: number): TokenStats {
+async function buildTokenStats(
+  repositoryRoot: string,
+  payload: unknown,
+  representedPaths: string[],
+  tokenBudget: number | undefined,
+): Promise<TokenStats> {
   const budget = tokenBudget ?? DEFAULT_TOKEN_BUDGET;
-  const returnedEstimate = Math.ceil(JSON.stringify(payload ?? {}).length / 4);
-  return {
+  const returnedEstimate = estimateTokens(payload ?? {});
+  const { stats } = await computeSavings({
+    repositoryRoot,
+    representedPaths,
+    returnedTokens: returnedEstimate,
     budget,
-    returnedEstimate,
-    savings: { available: false, note: SAVINGS_PLACEHOLDER },
-  };
+    stages: buildStages(payload),
+  });
+  return { budget, returnedEstimate, savings: stats };
+}
+
+/** Per-section returned-token breakdown, so callers can see where tokens go. */
+function buildStages(payload: unknown): StageStat[] {
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  const sections = ["plan", "policyRules", "incidents", "risks", "neighbours", "architecture"];
+  const stages: StageStat[] = [];
+  for (const stage of sections) {
+    if (record[stage] === undefined || record[stage] === null) continue;
+    stages.push({ stage, returnedTokens: estimateTokens(record[stage]) });
+  }
+  return stages;
 }
 
 function truncate(value: string, max: number): string {
