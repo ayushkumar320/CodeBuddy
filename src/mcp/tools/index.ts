@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { buildBeforeEditContext, buildBootstrapContext } from "../../context/engine.js";
 import type { CodeBuddy } from "../../core/codebuddy.js";
 import { loadPlanPolicy } from "../../core/config-file.js";
 import { listFactsPage } from "../../core/operations.js";
@@ -98,6 +99,13 @@ export const mcpToolInputSchemas = {
   map_neighbours: z.object({
     module: z.string().min(1),
     direction: z.enum(["in", "out", "both"]).default("both"),
+  }),
+  context_bootstrap: z.object({}),
+  context_before_edit: z.object({
+    task: z.string().min(1).optional(),
+    paths: z.array(z.string().min(1)).optional(),
+    planId: z.string().min(1).optional(),
+    useGit: z.boolean().optional(),
   }),
 } as const;
 
@@ -366,6 +374,49 @@ export function registerCodeBuddyTools(server: McpServer, options: RegisterCodeB
       const graph = await buildArchitectureMap(projectRoot);
       return json(neighbours(graph, input.module, input.direction));
     },
+  );
+
+  // ── Context engine tools (Proposal 04.2) ──────────────────────────
+  const tokenBudget = options.memory.config.tokenBudget;
+
+  server.registerTool(
+    "context_bootstrap",
+    {
+      title: "Bootstrap project context",
+      description:
+        "Return compact project awareness for the start of a turn: identity, active plan and policy, top policy rules, incident hotspots, and an architecture summary. Prefer this over a manual recall at session start.",
+      inputSchema: mcpToolInputSchemas.context_bootstrap.shape,
+    },
+    async () =>
+      json(
+        await buildBootstrapContext({
+          repositoryRoot: projectRoot,
+          namespace,
+          ...(tokenBudget !== undefined ? { tokenBudget } : {}),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "context_before_edit",
+    {
+      title: "Context before edit",
+      description:
+        "Assemble relevant context before changing code: resolves target files from paths, a plan, or git, then returns the relevant plan, matching policy rules, incident memory, an evidence-backed risk assessment, and import neighbours.",
+      inputSchema: mcpToolInputSchemas.context_before_edit.shape,
+    },
+    async (input) =>
+      json(
+        await buildBeforeEditContext({
+          repositoryRoot: projectRoot,
+          namespace,
+          ...(input.task !== undefined ? { task: input.task } : {}),
+          ...(input.paths !== undefined ? { paths: input.paths } : {}),
+          ...(input.planId !== undefined ? { planId: input.planId } : {}),
+          ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
+          ...(tokenBudget !== undefined ? { tokenBudget } : {}),
+        }),
+      ),
   );
 }
 
