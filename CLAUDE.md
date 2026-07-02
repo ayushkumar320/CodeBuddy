@@ -46,6 +46,9 @@ Always run typecheck + lint + tests before considering a change done.
 - `suggest/` — **Phase 04.6** read-only suggestion engine: `generateSuggestions` composes
   risk, plan divergence, architecture blast radius, incident history, missing tests, and
   stale policies into evidence-backed, severity-ranked findings. Never edits code.
+- `templates/` — **Phase 04.7** client workflow templates: `workflow` (Claude/Codex rules
+  referencing the four tools + degraded mode) and `install` (idempotent managed-block
+  upsert into CLAUDE.md/AGENTS.md). Surfaced via `codebuddy rules show|install`.
 - `planner/`, `providers/`, `langgraph/` — budget/policy, HF adapter, LangGraph node.
 - `cli/` — commander CLI; `commands/*` register subcommands via `register*Commands(program, runSafely)`.
 
@@ -92,8 +95,10 @@ Phase status:
 - ✅ 04.6 Suggestion engine — `codebuddy suggest` + `code_suggestions` MCP tool,
   `src/suggest/`. Read-only, evidence-backed, severity-ranked; composes risk, plan
   divergence, architecture, incidents, missing tests, stale policies. No auto-fix.
-- ⏭️ 04.7 Client workflow templates — next.
-- ⏳ 04.8 Release hardening.
+- ✅ 04.7 Client workflow templates — `codebuddy rules show|install`, `src/templates/`,
+  [docs/degraded-mode.md](docs/degraded-mode.md). Idempotent managed-block install into
+  CLAUDE.md/AGENTS.md; templates drive the four tools + degraded-mode behavior.
+- ⏭️ 04.8 Release hardening — next.
 
 ## Gotchas
 

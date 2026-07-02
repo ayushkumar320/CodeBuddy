@@ -23,6 +23,7 @@ import { registerMemoryCommands } from "./commands/memory-review.js";
 import { registerPlanCommands } from "./commands/plan.js";
 import { postgresDown, postgresStatus, postgresUp } from "./commands/postgres-docker.js";
 import { registerRiskCommands } from "./commands/risk.js";
+import { registerRulesCommands } from "./commands/rules.js";
 import { registerSavingsCommand } from "./commands/savings.js";
 import { registerSuggestCommand } from "./commands/suggest.js";
 import { runUseCommand } from "./commands/use-command.js";
@@ -409,6 +410,7 @@ export function createCli(): Command {
   registerMemoryCommands(program, runSafely);
   registerSavingsCommand(program, runSafely);
   registerSuggestCommand(program, runSafely);
+  registerRulesCommands(program, runSafely);
 
   return program;
 }
