@@ -98,7 +98,13 @@ Phase status:
 - ✅ 04.7 Client workflow templates — `codebuddy rules show|install`, `src/templates/`,
   [docs/degraded-mode.md](docs/degraded-mode.md). Idempotent managed-block install into
   CLAUDE.md/AGENTS.md; templates drive the four tools + degraded-mode behavior.
-- ⏭️ 04.8 Release hardening — next.
+- ✅ 04.8 Release hardening — version `2.0.0`, [docs/migration-2.0.md](docs/migration-2.0.md),
+  README updated for the context engine, token-savings demo path. Full verification green
+  (typecheck/lint/test/build, `npm audit --omit=dev` clean, `npm pack` validated).
+
+**Proposal 04 (Automatic Context Engine) is complete.** Real PostgreSQL
+recovery/integration remains environment-gated (one Vitest integration test
+skips without a live Postgres).
 
 ## Gotchas
 

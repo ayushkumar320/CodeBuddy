@@ -1,18 +1,24 @@
 # CodeBuddy
 
-MCP memory server for multi-agent systems. Curated facts and summaries are
-written as readable Markdown under `.codebuddy/memory/` and indexed in
-PostgreSQL with pgvector. CodeBuddy also exposes an MCP stdio server and
-LangGraph helpers.
+Local-first MCP memory **and automatic project-context engine** for multi-agent
+coding. Curated facts, summaries, and plans are written as readable Markdown
+under `.codebuddy/` and indexed in PostgreSQL with pgvector. On top of that,
+CodeBuddy prepares the smallest useful context for an agent before it edits,
+captures durable knowledge after a turn, measures the token savings, and warns
+before risky changes — without the user manually juggling `remember`/`recall`.
 
 ## What It Ships
 
 `codebuddy` is a single npm package with four surfaces:
 
 - TypeScript SDK helpers
-- MCP server over stdio
-- CLI for setup, inspection, export, pruning, stats, and health checks
+- MCP server over stdio (memory, plan, risk, map, and the v2.0 context tools)
+- CLI for setup, indexing, context, savings, suggestions, review, and health
 - LangGraph helpers
+
+See the [2.0 migration notes](docs/migration-2.0.md) if you are upgrading from
+0.1.x, and [degraded-mode behavior](docs/degraded-mode.md) for how the tools
+fail soft.
 
 ## Requirements
 
@@ -104,8 +110,91 @@ codebuddy migrate to-files --write
 codebuddy reindex --full      # rebuild facts + summaries from Markdown
 codebuddy risk assess --git   # assess risk for current git changes
 codebuddy map build           # summarize the lightweight import graph
+codebuddy index               # build the background file index
+codebuddy context bootstrap   # preview start-of-turn project context
+codebuddy savings             # measured token savings from summaries
+codebuddy suggest --git       # read-only, evidence-backed suggestions
+codebuddy memory review       # curate auto-captured memory
+codebuddy rules install --client claude
 codebuddy prune --older-than 30d
 ```
+
+## Automatic context engine (v2.0)
+
+The v2.0 goal is to make project context automatic: CodeBuddy prepares compact
+context before an edit, captures durable knowledge after a turn, and proves the
+token savings — all local-first and inspectable.
+
+### Background indexing
+
+```bash
+codebuddy index          # content hashes + deterministic file summaries
+codebuddy index --full   # re-summarize every file
+codebuddy watch          # incrementally re-index on change (Ctrl+C to stop)
+```
+
+The index is a rebuildable cache at `.codebuddy/cache/index.json` (gitignored) —
+never a source of truth. It respects `.gitignore` and skips `.codebuddy/`.
+
+### Context at the right moment
+
+```bash
+codebuddy context bootstrap                       # identity, plan, policy, incidents, architecture
+codebuddy context preview "fix OAuth callback"    # before-edit context for the change set
+codebuddy context preview --paths src/auth/oauth.ts
+codebuddy context explain --git                   # why each piece was included + token savings
+```
+
+Through MCP, agents call `context_bootstrap`, `context_before_edit`, and
+`context_after_turn` directly (see the tools table below).
+
+### Token savings demo
+
+Prove the reduction end-to-end:
+
+```bash
+codebuddy index                       # summarize the repo
+codebuddy savings                     # e.g. "saved N tokens (95% smaller)"
+codebuddy context explain --paths src/foo.ts   # per-stage accounting for one change set
+```
+
+Savings are measured against a real baseline — the cost of reading the
+represented files' raw source — and are clamped so they are never fabricated.
+
+### Automatic memory capture with review
+
+`context_after_turn` (MCP) turns a turn summary into classified candidates.
+Confident facts, decisions, and incidents auto-save as Markdown; notes,
+low-confidence, and sensitive items queue for review; chatter is dropped.
+
+```bash
+codebuddy memory review           # list pending candidates
+codebuddy memory review show <id>
+codebuddy memory review approve <id>   # promote to a durable fact
+codebuddy memory review reject <id>
+```
+
+### Read-only suggestions
+
+```bash
+codebuddy suggest --git                       # or --paths a,b or --plan <id>
+codebuddy suggest --paths src/auth/oauth.ts --json
+```
+
+Evidence-backed, severity-ranked findings composed from risk, plan divergence,
+architecture blast radius, incident history, missing tests, and stale policies.
+Suggestions never edit code.
+
+### Client workflow templates
+
+```bash
+codebuddy rules show --client claude          # preview the workflow rules
+codebuddy rules install --client claude       # managed block in CLAUDE.md
+codebuddy rules install --client codex        # managed block in AGENTS.md
+```
+
+Install writes an idempotent block between `codebuddy:workflow` markers, so
+re-running updates it in place without touching your other content.
 
 ## File-backed memory
 
@@ -233,7 +322,8 @@ Rules:
 - `codebuddy init` creates the config file with `0600` permissions
 - `codebuddy doctor` warns if permissions are broader than `0600`
 - the Hugging Face token must never be logged and is redacted in errors
-- v0.1 uses Hugging Face only; additional providers are out of scope
+- CodeBuddy uses Hugging Face only; additional providers are out of scope
+- the core context, index, savings, and suggestion paths run with no LLM at all
 
 ## SDK Example
 
@@ -304,6 +394,10 @@ Notes:
 | `risk_assess` | `{ planId?, paths?, useGit?, limit? }` | `{ items, stats }` |
 | `map_query` | `{ from?, to?, limit? }` | `ModuleEdge[]` |
 | `map_neighbours` | `{ module, direction? }` | `{ modules, edges }` |
+| `context_bootstrap` | `{}` | `{ project, plan, policy, policyRules, incidents, architecture, tokens }` |
+| `context_before_edit` | `{ task?, paths?, planId?, useGit? }` | `{ targetPaths, plan, policyRules, incidents, risks, neighbours, tokens }` |
+| `context_after_turn` | `{ summary, changedFiles?, planId?, taskType?, agentId? }` | `{ saved, queuedForReview, ignored, reasons }` |
+| `code_suggestions` | `{ paths?, planId?, useGit?, limit? }` | `{ suggestions, stats }` |
 
 MCP currently ships over stdio. HTTP transport remains deferred.
 

@@ -33,8 +33,10 @@ export function createCli(): Command {
 
   program
     .name("codebuddy")
-    .description("MCP memory server for multi-agent systems.")
-    .version("0.0.0");
+    .description(
+      "Local-first MCP memory and automatic project-context engine for multi-agent coding.",
+    )
+    .version("2.0.0");
 
   program
     .command("use")

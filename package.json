@@ -1,7 +1,7 @@
 {
   "name": "@ayushkumar320/codebuddy",
-  "version": "0.1.2",
-  "description": "Portable Markdown-backed MCP memory for multi-agent systems, indexed with Postgres and pgvector.",
+  "version": "2.0.0",
+  "description": "Local-first Markdown-backed MCP memory and automatic project-context engine for multi-agent coding, indexed with Postgres and pgvector.",
   "type": "module",
   "license": "MIT",
   "author": "Ayush Kumar",
