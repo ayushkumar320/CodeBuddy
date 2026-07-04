@@ -73,9 +73,32 @@ There is currently no client-side hook that *forces* the calls. So:
 - There is no deterministic "on every prompt / on every edit / on turn end"
   trigger independent of the model.
 
-In short: **it recalls and captures on its own as part of an instructed
-workflow, but it is not hard-wired.** Making it hard-wired (client hooks) is the
-first item in [next-plans.md](next-plans.md).
+In short, with the *advisory* rules alone (`codebuddy rules install`): it recalls
+and captures on its own as part of an instructed workflow, but it is not
+hard-wired.
+
+### Hard-wired automation is now available (`codebuddy hooks`)
+
+For a **guaranteed, model-independent** setup, install the Claude Code lifecycle
+hooks:
+
+```bash
+codebuddy hooks install --client claude
+```
+
+This wires three deterministic triggers into `.claude/settings.json`:
+
+- `UserPromptSubmit` → `codebuddy hooks context` — injects compact project
+  context into every prompt (**recall, guaranteed**);
+- `PostToolUse(Edit|Write|MultiEdit)` → `codebuddy hooks stage` — records the
+  files each edit touched;
+- `Stop` → `codebuddy hooks capture` — at turn end, captures durable memory from
+  the *real* change set + the turn transcript (**capture, guaranteed**).
+
+These fire whether or not the model chooses to call anything. The runtime
+commands are fail-soft (a hook never breaks a turn), the install is idempotent
+and visible, and `codebuddy hooks uninstall` removes them cleanly. Capture still
+runs through the same confidence + sensitivity gating.
 
 ### Capture gating (what actually gets saved)
 

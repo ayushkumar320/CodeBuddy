@@ -311,6 +311,26 @@ codebuddy rules install --client codex     # → managed block in AGENTS.md
 See [docs/degraded-mode.md](docs/degraded-mode.md) for how the tools fail soft
 (a tool missing, Postgres down, empty retrieval).
 
+### 11. Fully automatic mode (hooks)
+
+Templates *ask* the agent to call the tools. **Hooks guarantee it** — CodeBuddy
+wires into Claude Code's lifecycle so recall and capture fire deterministically,
+whether or not the model remembers to.
+
+```bash
+codebuddy hooks install --client claude    # → .claude/settings.json (idempotent)
+codebuddy hooks status
+codebuddy hooks uninstall --client claude  # removes only CodeBuddy's hooks
+```
+
+- `UserPromptSubmit` → inject compact project context into every prompt (**recall**)
+- `PostToolUse(Edit|Write|MultiEdit)` → record the changed files
+- `Stop` → capture durable memory from the real change set + transcript (**capture**)
+
+Set this up once and you never call `remember`/`recall` — it happens on its own.
+Hooks are fail-soft (a hook never breaks a turn) and capture still runs through
+the same confidence + sensitivity gating. Restart Claude Code after installing.
+
 ---
 
 ## How CodeBuddy saves tokens vs. a big knowledge graph
@@ -539,6 +559,11 @@ reachability, recent usage, and config permissions.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Detailed Claude Code / Codex + Docker setup lives
-in [CLAUDE_CODEX.md](CLAUDE_CODEX.md); upgrade notes in
-[docs/migration-2.0.md](docs/migration-2.0.md).
+MIT — see [LICENSE](LICENSE).
+
+**Project docs:** [current-version.md](docs/current-version.md) (what ships today
++ how automatic it really is) · [next-plans.md](docs/next-plans.md) (roadmap:
+hook-enforced automation + deeper token savings) ·
+[migration-2.0.md](docs/migration-2.0.md) (upgrade notes) ·
+[degraded-mode.md](docs/degraded-mode.md) (fail-soft behavior) ·
+[CLAUDE_CODEX.md](CLAUDE_CODEX.md) (Claude Code / Codex + Docker setup).
