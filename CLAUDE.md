@@ -49,6 +49,10 @@ Always run typecheck + lint + tests before considering a change done.
 - `templates/` — **Phase 04.7** client workflow templates: `workflow` (Claude/Codex rules
   referencing the four tools + degraded mode) and `install` (idempotent managed-block
   upsert into CLAUDE.md/AGENTS.md). Surfaced via `codebuddy rules show|install`.
+- `hooks/` — **Post-2.0 (N.1/N.2)** hook-enforced automation: `staging` (per-session edit
+  set), `settings` (idempotent `.claude/settings.json` merge), `runtime` (context/stage/
+  capture handlers). Surfaced via `codebuddy hooks install|uninstall|status` + the
+  fail-soft runtime commands the hooks invoke. Makes recall/capture deterministic.
 - `planner/`, `providers/`, `langgraph/` — budget/policy, HF adapter, LangGraph node.
 - `cli/` — commander CLI; `commands/*` register subcommands via `register*Commands(program, runSafely)`.
 
