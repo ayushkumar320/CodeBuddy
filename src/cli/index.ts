@@ -27,6 +27,7 @@ import { registerRiskCommands } from "./commands/risk.js";
 import { registerRulesCommands } from "./commands/rules.js";
 import { registerSavingsCommand } from "./commands/savings.js";
 import { registerSuggestCommand } from "./commands/suggest.js";
+import { registerSymbolsCommand } from "./commands/symbols.js";
 import { runUseCommand } from "./commands/use-command.js";
 
 export function createCli(): Command {
@@ -415,6 +416,7 @@ export function createCli(): Command {
   registerSuggestCommand(program, runSafely);
   registerRulesCommands(program, runSafely);
   registerHooksCommands(program, runSafely);
+  registerSymbolsCommand(program, runSafely);
 
   return program;
 }

@@ -68,6 +68,12 @@ export type ModuleNeighbours = {
   dependedOnBy: string[];
 };
 
+/** A target file's public API as compact signatures (Roadmap N.3). */
+export type FileSymbols = {
+  path: string;
+  signatures: string[];
+};
+
 /**
  * Token accounting surface. `returnedEstimate` is the size of this payload;
  * `savings` (Phase 04.5) measures it against the cost of reading the represented
@@ -102,6 +108,8 @@ export type BeforeEditContext = {
   incidents: IncidentSummary[];
   risks: Assessment;
   neighbours: ModuleNeighbours[];
+  /** Public API (signatures) of target files, so the agent needn't read them. */
+  symbols: FileSymbols[];
   tokens: TokenStats;
   explain: string[];
 };

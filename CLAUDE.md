@@ -72,11 +72,9 @@ a DB. DB-backed commands use `withRuntime`.
 - Tests: temp repos via `mkdtemp`, cleaned in `afterEach`. Schema tests parse
   `mcpToolInputSchemas` directly.
 
-## v2.0 build workflow (Proposal 04)
+## v2.0 implementation history (Proposal 04)
 
 Source of truth: [docs/proposals/04-automatic-context-engine.md](docs/proposals/04-automatic-context-engine.md).
-Per-phase execution packets: [docs/build/](docs/build/README.md). Build one
-phase at a time; don't widen scope beyond a packet's build targets.
 
 Phase status:
 

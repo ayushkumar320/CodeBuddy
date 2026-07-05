@@ -183,6 +183,12 @@ function printBeforeEdit(ctx: BeforeEditContext): void {
       );
     }
   }
+  if (ctx.symbols.length > 0) {
+    console.log(pc.bold("symbols (signatures, in place of full source):"));
+    for (const file of ctx.symbols) {
+      console.log(`  ${file.path} ${pc.dim(`${file.signatures.length} symbol(s)`)}`);
+    }
+  }
   printTokens(ctx);
 }
 

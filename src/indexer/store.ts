@@ -12,6 +12,15 @@ import { INDEX_MANIFEST_VERSION, type IndexManifest } from "./types.js";
  * throwing, and a full `codebuddy index` regenerates them.
  */
 
+const symbolSpanSchema = z.object({
+  name: z.string(),
+  kind: z.enum(["function", "class", "interface", "type", "enum", "const"]),
+  startLine: z.number().int().nonnegative(),
+  endLine: z.number().int().nonnegative(),
+  signature: z.string(),
+  exported: z.boolean(),
+});
+
 const entrySchema = z.object({
   path: z.string(),
   hash: z.string(),
@@ -19,6 +28,7 @@ const entrySchema = z.object({
   language: z.string(),
   lines: z.number().int().nonnegative(),
   symbols: z.array(z.string()),
+  symbolTable: z.array(symbolSpanSchema).optional(),
   summary: z.string(),
   indexedAt: z.string(),
 });
@@ -46,7 +56,8 @@ export class IndexStore {
       const raw = await readFile(this.manifestPath, "utf8");
       const parsed = manifestSchema.safeParse(JSON.parse(raw));
       if (!parsed.success) return emptyManifest();
-      return parsed.data;
+      // Zod's optional() widens to `| undefined`; the parse guarantees the shape.
+      return parsed.data as IndexManifest;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyManifest();
       // Unreadable cache is non-fatal: rebuild from scratch.

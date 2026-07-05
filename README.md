@@ -225,6 +225,16 @@ codebuddy index          # again → "=128" (all unchanged)
 codebuddy watch          # re-index on save; coalesces bursts; Ctrl+C to stop
 ```
 
+The index also records a per-file **symbol table** (functions, classes, types),
+so context can send a file's public API instead of its whole body:
+
+```bash
+codebuddy symbols src/service.ts
+# export function getUser  L3-5
+# ...
+# 5 symbol(s) · signatures ~40 tokens vs full file ~72 (44% smaller)
+```
+
 ### 6. Automatic context (bootstrap & before-edit)
 
 The heart of v2.0. Preview exactly what the agent would receive:
@@ -561,9 +571,10 @@ reachability, recent usage, and config permissions.
 
 MIT — see [LICENSE](LICENSE).
 
-**Project docs:** [current-version.md](docs/current-version.md) (what ships today
-+ how automatic it really is) · [next-plans.md](docs/next-plans.md) (roadmap:
-hook-enforced automation + deeper token savings) ·
-[migration-2.0.md](docs/migration-2.0.md) (upgrade notes) ·
-[degraded-mode.md](docs/degraded-mode.md) (fail-soft behavior) ·
-[CLAUDE_CODEX.md](CLAUDE_CODEX.md) (Claude Code / Codex + Docker setup).
+**Project docs:** start at the [docs index](docs/README.md).
+[current-version.md](docs/current-version.md) (what ships today + how automatic
+it really is) · [roadmap.md](docs/roadmap.md) (what's left to build) ·
+[improvements.md](docs/improvements.md) (quality/robustness backlog) ·
+[live-test-checklist.md](docs/live-test-checklist.md) (pre-release verification) ·
+[migration-2.0.md](docs/migration-2.0.md) · [degraded-mode.md](docs/degraded-mode.md) ·
+[CLAUDE_CODEX.md](CLAUDE_CODEX.md).

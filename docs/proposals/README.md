@@ -9,14 +9,14 @@ Proposals here describe *what to build and why*, not implementation status.
 The status field at the top of each doc moves through: Draft → Accepted →
 In Progress → Shipped → Superseded.
 
-## Active proposals
+## Proposal index
 
 | # | Title | Status | Target | Owner |
 |---|---|---|---|---|
-| [04](./04-automatic-context-engine.md) | Automatic Context Engine | Draft | v2.0.0 | @ayushkumar320 |
+| [04](./04-automatic-context-engine.md) | Automatic Context Engine | Shipped | v2.0.0 | @ayushkumar320 |
 
-Shipped proposal docs are removed from this folder once their behavior is
-captured in the user/developer docs. Current shipped foundations:
+Shipped proposal docs may stay here when they remain the clearest architectural
+source of truth. Current shipped foundations:
 
 - Storage Model: Markdown-backed facts/summaries, PostgreSQL as derived index.
 - Plan Panel: durable Markdown plans with CLI and MCP tools.
@@ -42,17 +42,11 @@ Markdown memory + plans ──▶ Risk Panel MVP
              └────────────▶ Architecture Map MVP
 ```
 
-## Execution order
+## Execution history
 
-Recommended next proposal execution:
-
-1. Build Proposal 04 Phase 1: setup hardening and trust checks.
-2. Build Proposal 04 Phase 2: `context_bootstrap` and `context_before_edit`.
-3. Build Proposal 04 Phase 3: background indexing and summaries.
-4. Build Proposal 04 Phase 4: automatic memory extraction and review queue.
-
-Detailed execution packets and Codex/Claude prompts live under
-[`docs/build/`](../build/README.md).
+Proposal 04 was implemented in phased packets and is now fully shipped. The
+temporary build-packet docs were removed after completion to keep the repo
+focused on current behavior and remaining roadmap work.
 
 ## Conventions for new proposals
 

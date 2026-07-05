@@ -1,8 +1,10 @@
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadPlanPolicy } from "../core/config-file.js";
 import { type IncidentFactFile, MemoryFileStore } from "../core/memory-file-store.js";
 import { PlanFileStore, type PlanSpec } from "../core/plan-file-store.js";
 import { PlanLifecycle } from "../core/plan-lifecycle.js";
+import { extractSymbolTable, supportsSymbols, symbolSignatures } from "../indexer/symbols.js";
 import { buildArchitectureMap } from "../map/indexer.js";
 import type { ArchitectureMap } from "../map/types.js";
 import { assessRisk, resolveRiskPaths } from "../risk/service.js";
@@ -35,6 +37,8 @@ const LIMITS = {
   neighbourPaths: 10,
   neighbourEdges: 10,
   incidentSummaryChars: 140,
+  symbolFiles: 10,
+  symbolsPerFile: 12,
 } as const;
 
 const DEFAULT_TOKEN_BUDGET = 4_000;
@@ -169,6 +173,12 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
   if (neighbours.length > 0)
     explain.push(`neighbours: import graph for ${neighbours.length} file(s)`);
 
+  const symbols = await computeTargetSymbols(repositoryRoot, targetPaths);
+  if (symbols.length > 0)
+    explain.push(
+      `symbols: signatures for ${symbols.length} target file(s) (in place of full source)`,
+    );
+
   const partial = {
     project: { namespace, root: repositoryRoot },
     task: input.task ?? null,
@@ -180,6 +190,7 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
     incidents: incidentSummaries,
     risks,
     neighbours,
+    symbols,
     explain,
   };
   // The context stands in for the target files and their import neighbours —
@@ -307,6 +318,29 @@ function computeNeighbours(map: ArchitectureMap, paths: string[]): ModuleNeighbo
       dependsOn: [...new Set(dependsOn)],
       dependedOnBy: [...new Set(dependedOnBy)],
     });
+  }
+  return result;
+}
+
+/**
+ * Read the target files' public API as compact signatures (Roadmap N.3), so the
+ * agent can see what each file offers without the tool sending its full source.
+ * Bounded and best-effort: unreadable or unsupported files are skipped.
+ */
+async function computeTargetSymbols(
+  repositoryRoot: string,
+  targetPaths: string[],
+): Promise<Array<{ path: string; signatures: string[] }>> {
+  const result: Array<{ path: string; signatures: string[] }> = [];
+  for (const path of targetPaths.slice(0, LIMITS.symbolFiles)) {
+    if (!supportsSymbols(path)) continue;
+    try {
+      const content = await readFile(join(repositoryRoot, path), "utf8");
+      const signatures = symbolSignatures(extractSymbolTable(content), LIMITS.symbolsPerFile);
+      if (signatures.length > 0) result.push({ path, signatures });
+    } catch {
+      // Skip files that can't be read; symbols are an enhancement, not required.
+    }
   }
   return result;
 }
