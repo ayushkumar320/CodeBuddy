@@ -110,13 +110,10 @@ skips without a live Postgres).
 
 ## Gotchas
 
-- `PlanFileStore.listPlans()` parses every `*.md` in `.codebuddy/plans/` and
-  throws on files without valid plan front matter. This repo's own
-  `.codebuddy/plans/` contains hand-written planning docs (READMEs, build
-  plans), so `plan list` / `context bootstrap` / `plan_current` error here with
-  "Markdown file must start with YAML front matter." Test context features in a
-  clean scaffold, not against this repo's dirty plans dir.
-- The architecture map's import resolver matches relative imports and appends
-  extensions to the specifier; it does not strip a trailing `.js`, so
-  `./x.js`-style specifiers may not resolve to `x.ts`. Use extensionless
-  specifiers in map/context test fixtures.
+- `PlanFileStore.listPlans()` only parses files matching `pln_*.md` (the name
+  plans are written under); other markdown in `.codebuddy/plans/` (hand-written
+  READMEs, build plans) is ignored, so `plan list` / `context bootstrap` /
+  `plan_current` no longer throw here. (Fixed in Phase 05.1.)
+- The architecture map's import resolver strips a trailing `.js/.jsx/.mjs/.cjs`
+  from relative specifiers and tries the source stem, so `./x.js` resolves to
+  `x.ts`. Real `.js` sources still resolve. (Fixed in Phase 05.1.)
