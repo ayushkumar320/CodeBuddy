@@ -9,6 +9,7 @@ import { bootstrapDatabase } from "../db/bootstrap.js";
 import { createDatabaseClient } from "../db/client.js";
 import { runMigrations } from "../db/migrator.js";
 import { startMcpServer } from "../mcp/server.js";
+import { VERSION } from "../version.js";
 import {
   installClaudeEntry,
   listClaudeEntries,
@@ -38,7 +39,7 @@ export function createCli(): Command {
     .description(
       "Local-first MCP memory and automatic project-context engine for multi-agent coding.",
     )
-    .version("2.0.0");
+    .version(VERSION);
 
   program
     .command("use")

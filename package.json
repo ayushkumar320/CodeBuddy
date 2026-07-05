@@ -44,6 +44,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:pg": "bash scripts/test-pg-recovery.sh",
+    "branches:prune": "bash scripts/prune-merged-branches.sh",
     "lint": "biome check .",
     "format": "biome format --write .",
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
