@@ -131,6 +131,21 @@ codebuddy doctor                                # PASS: DB ok, pgvector ok
 If doctor shows `password authentication failed for user "<you>"`, the URL lacks
 credentials — set `DATABASE_URL` as above. This does not affect steps 2–10.
 
+### 11a. Markdown recovery (automated) [db]
+
+The one integration test that skips without a live database
+(`src/db/storage-recovery.integration.test.ts`) verifies that deleted fact/
+summary rows rebuild from their Markdown source. Run it end-to-end — brings
+Postgres up, runs the test, tears it down:
+
+```bash
+npm run test:pg                                 # PASS: recovery test runs (not skipped) and passes
+```
+
+Requires Docker on PATH. The harness sets `CODEBUDDY_TEST_DATABASE_URL`
+automatically; to point at an existing database instead, export that variable
+and run `npx vitest run src/db/storage-recovery.integration.test.ts` directly.
+
 ## 12. End-to-end in a real client [mcp]
 
 ```bash

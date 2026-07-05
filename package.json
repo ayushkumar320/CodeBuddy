@@ -43,6 +43,7 @@
     "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "test:pg": "bash scripts/test-pg-recovery.sh",
     "lint": "biome check .",
     "format": "biome format --write .",
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
