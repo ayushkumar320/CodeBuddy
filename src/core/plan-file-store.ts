@@ -174,7 +174,11 @@ export class PlanFileStore {
       const entries = await readdir(this.plansDirectory, { withFileTypes: true });
       const plans: PlanSpec[] = [];
       for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        // Plans are always written as `<pln_id>.md`. Ignore any other markdown
+        // (hand-written notes, READMEs, build plans) so a shared plans dir with
+        // non-plan files can't make discovery throw.
         if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+        if (!/^pln_[a-z0-9]+\.md$/.test(entry.name)) continue;
         plans.push(await this.readPlan(join(this.plansDirectory, entry.name)));
       }
       return plans;

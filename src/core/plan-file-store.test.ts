@@ -151,6 +151,16 @@ describe("PlanFileStore enumeration + active lookup", () => {
     expect(await store.listPlans()).toEqual([]);
   });
 
+  it("ignores non-plan markdown in the plans directory instead of throwing", async () => {
+    const store = new PlanFileStore(await temporaryRoot());
+    await store.writePlan(draft({ id: "pln_01aaa" }));
+    // Hand-written notes and malformed markdown a human dropped alongside plans.
+    await writeFile(join(store.plansDirectory, "README.md"), "# Build notes\n\nno front matter\n");
+    await writeFile(join(store.plansDirectory, "BUILD-PLAN.md"), "---\nnot: a plan\n---\nbody\n");
+    const plans = await store.listPlans();
+    expect(plans.map((p) => p.id)).toEqual(["pln_01aaa"]);
+  });
+
   it("findActivePlan returns null when none are active", async () => {
     const store = new PlanFileStore(await temporaryRoot());
     await store.writePlan(draft({ id: "pln_01aaa", status: "draft" }));

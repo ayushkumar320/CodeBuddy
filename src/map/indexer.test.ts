@@ -44,4 +44,39 @@ describe("buildArchitectureMap", () => {
     ]);
     expect(neighbours(graph, "src/core/helper.ts", "in").edges).toHaveLength(2);
   });
+
+  it("resolves ESM .js/.jsx specifiers to their TypeScript source", async () => {
+    const root = await temporaryRoot();
+    await mkdir(join(root, "src", "core"), { recursive: true });
+    await writeFile(
+      join(root, "src", "index.ts"),
+      [
+        'import { helper } from "./core/helper.js";',
+        'import { widget } from "./core/widget.jsx";',
+        'await import("./core/lazy.js");',
+      ].join("\n"),
+    );
+    await writeFile(join(root, "src", "core", "helper.ts"), "export const helper = 1;\n");
+    await writeFile(join(root, "src", "core", "widget.tsx"), "export const widget = 1;\n");
+    await writeFile(join(root, "src", "core", "lazy.ts"), "export const lazy = 1;\n");
+
+    const graph = await buildArchitectureMap(root);
+    expect(queryMap(graph, { from: "src/index.ts" }).map((edge) => edge.to)).toEqual([
+      "src/core/helper.ts",
+      "src/core/lazy.ts",
+      "src/core/widget.tsx",
+    ]);
+  });
+
+  it("still resolves a real .js specifier when the source is .js", async () => {
+    const root = await temporaryRoot();
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "src", "index.ts"), 'import { j } from "./sibling.js";\n');
+    await writeFile(join(root, "src", "sibling.js"), "export const j = 1;\n");
+
+    const graph = await buildArchitectureMap(root);
+    expect(queryMap(graph, { from: "src/index.ts" }).map((edge) => edge.to)).toEqual([
+      "src/sibling.js",
+    ]);
+  });
 });

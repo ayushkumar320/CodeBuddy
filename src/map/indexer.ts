@@ -126,19 +126,24 @@ function resolveImport(
 ): string | null {
   if (!specifier.startsWith(".")) return null;
   const base = normalize(relative(root, resolve(root, dirname(from), specifier)));
-  const candidates = [
-    base,
-    `${base}.ts`,
-    `${base}.tsx`,
-    `${base}.js`,
-    `${base}.jsx`,
-    `${base}.mjs`,
-    `${base}.cjs`,
-    `${base}/index.ts`,
-    `${base}/index.tsx`,
-    `${base}/index.js`,
-    `${base}/index.jsx`,
-  ];
+  // ESM specifiers point at emitted JS (`./x.js`), but the source on disk is
+  // `./x.ts`. Strip a trailing JS-style extension so the stem can resolve to
+  // its TypeScript/JavaScript source the same way extensionless imports do.
+  const stem = base.replace(/\.(js|jsx|mjs|cjs)$/, "");
+  const bases = stem === base ? [base] : [stem, base];
+  const candidates = bases.flatMap((b) => [
+    b,
+    `${b}.ts`,
+    `${b}.tsx`,
+    `${b}.js`,
+    `${b}.jsx`,
+    `${b}.mjs`,
+    `${b}.cjs`,
+    `${b}/index.ts`,
+    `${b}/index.tsx`,
+    `${b}/index.js`,
+    `${b}/index.jsx`,
+  ]);
   return candidates.find((candidate) => fileSet.has(candidate)) ?? null;
 }
 
