@@ -16,6 +16,9 @@ Each phase file contains:
 - verification checklist;
 - a Codex/Claude execution prompt.
 
+**Start here:** [current-phase.md](./current-phase.md) — what's being built now
+and which doc drives it.
+
 ## Phase files
 
 1. [05.1 Correctness Hardening](./05.1-correctness-hardening.md)

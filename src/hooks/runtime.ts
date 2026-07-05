@@ -112,7 +112,7 @@ function toRepoRelative(repositoryRoot: string, path: string): string {
  * file list — which the conservative extractor will simply not turn into durable
  * facts, exactly the safe outcome.
  */
-async function deriveSummary(
+export async function deriveSummary(
   transcriptPath: string | undefined,
   changedFiles: string[],
 ): Promise<string> {
@@ -121,7 +121,7 @@ async function deriveSummary(
   return assistantText ? `${assistantText}\n\n${fileList}` : fileList;
 }
 
-async function lastAssistantMessage(transcriptPath: string): Promise<string> {
+export async function lastAssistantMessage(transcriptPath: string): Promise<string> {
   try {
     const raw = await readFile(transcriptPath, "utf8");
     let latest = "";

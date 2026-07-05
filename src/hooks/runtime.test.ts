@@ -1,10 +1,22 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { MemoryFileStore } from "../core/memory-file-store.js";
-import { extractEditedPaths, runCaptureHook, runContextHook, runStageHook } from "./runtime.js";
+import {
+  deriveSummary,
+  extractEditedPaths,
+  lastAssistantMessage,
+  runCaptureHook,
+  runContextHook,
+  runStageHook,
+} from "./runtime.js";
 import { HookStagingStore } from "./staging.js";
+
+const FIXTURE_TRANSCRIPT = fileURLToPath(
+  new URL("./__fixtures__/transcript.jsonl", import.meta.url),
+);
 
 const roots: string[] = [];
 
@@ -74,6 +86,45 @@ describe("runContextHook", () => {
     expect(block).toContain("CodeBuddy project context");
     expect(block).toContain(`project: ${basename(root)}`);
     expect(block.length).toBeLessThanOrEqual(1800);
+  });
+});
+
+describe("transcript extraction", () => {
+  it("extracts the last assistant text from a realistic Claude Code transcript", async () => {
+    const text = await lastAssistantMessage(FIXTURE_TRANSCRIPT);
+    // Skips tool_use-only assistant turns and tool_result user turns, landing on
+    // the final natural-language assistant message.
+    expect(text).toContain("Root cause");
+    expect(text).toContain("file descriptor");
+    expect(text).not.toContain("tool_use");
+    expect(text).not.toContain("Let me look at the upload handler");
+  });
+
+  it("falls back to empty string on malformed JSON lines", async () => {
+    const root = await tempRepo();
+    const transcript = join(root, "broken.jsonl");
+    await writeFile(transcript, '{ not json\n<<garbage>>\n{"type":"assistant"} truncated');
+    expect(await lastAssistantMessage(transcript)).toBe("");
+  });
+
+  it("returns empty string when the transcript file is missing", async () => {
+    expect(await lastAssistantMessage(join(await tempRepo(), "nope.jsonl"))).toBe("");
+  });
+
+  it("deriveSummary falls back to a plain file list when no transcript is available", async () => {
+    const summary = await deriveSummary(undefined, ["src/a.ts", "src/b.ts"]);
+    expect(summary).toBe("Changed files: src/a.ts, src/b.ts.");
+  });
+
+  it("deriveSummary prepends assistant text to the file list when a transcript exists", async () => {
+    const summary = await deriveSummary(FIXTURE_TRANSCRIPT, ["src/upload.ts"]);
+    expect(summary).toContain("Root cause");
+    expect(summary.endsWith("Changed files: src/upload.ts.")).toBe(true);
+  });
+
+  it("deriveSummary falls back to the file list when the transcript is unreadable", async () => {
+    const summary = await deriveSummary(join(await tempRepo(), "missing.jsonl"), ["src/x.ts"]);
+    expect(summary).toBe("Changed files: src/x.ts.");
   });
 });
 
