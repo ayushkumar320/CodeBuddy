@@ -18,7 +18,7 @@ Index of all project documentation. Start here.
 - [migration-2.0.md](migration-2.0.md) — upgrading from 0.1.x to 2.0.
 - [degraded-mode.md](degraded-mode.md) — how the tools fail soft.
 - [live-test-checklist.md](live-test-checklist.md) — manual verification before
-  publishing a release.
+  publishing and final deployment.
 
 ## Build on it
 

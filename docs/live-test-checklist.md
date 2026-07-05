@@ -29,7 +29,7 @@ npm run build
 npm pack                                        # → ayushkumar320-codebuddy-2.0.0.tgz
 npm install -g ./ayushkumar320-codebuddy-2.0.0.tgz
 codebuddy --version                             # PASS: prints 2.0.0
-codebuddy --help                                # PASS: lists index, context, savings, suggest, memory, rules, hooks
+codebuddy --help                                # PASS: lists index, context, symbols, savings, suggest, memory, rules, hooks
 ```
 Cleanup later: `npm rm -g @ayushkumar320/codebuddy`.
 
@@ -64,6 +64,7 @@ codebuddy savings --json                        # PASS: available:true, baseline
 codebuddy context bootstrap                     # PASS: project, plan, policy, incidents, architecture, token line
 codebuddy context preview --paths src/<f>.ts    # PASS: targets + policy/risk/neighbours
 codebuddy context explain --paths src/<f>.ts    # PASS: "why included" lines + per-stage token accounting + savings
+codebuddy symbols src/<f>.ts                    # PASS: symbol signatures + line ranges + savings comparison
 ```
 
 ## 6. Suggestions [file]
@@ -136,9 +137,12 @@ credentials — set `DATABASE_URL` as above. This does not affect steps 2–10.
 codebuddy use <project>                          # wires MCP + namespace + DB
 # restart Claude Code (or Codex)
 ```
-- With rules or hooks installed, ask the agent to make a small change.
-  **PASS:** it calls `context_bootstrap`/`context_before_edit` first and
-  `context_after_turn` at the end (or the hooks fire automatically).
+- In Claude Code, with hooks installed, ask the agent to make a small change.
+  **PASS:** the hooks fire automatically and capture recall/staging/capture
+  without depending on model compliance.
+- In Claude Code or Codex, with rules installed, ask the agent to make a small
+  change. **PASS:** it calls `context_bootstrap`/`context_before_edit` first
+  and `context_after_turn` at the end as instructed by the workflow template.
 - Then `codebuddy memory review` shows what was captured. **PASS.**
 
 ## 13. Cleanup

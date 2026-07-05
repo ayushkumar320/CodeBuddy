@@ -29,13 +29,14 @@ search index, never the source of truth. There is no hosted service.
 | Memory | `list-facts`, `inspect`, `export`, `stats`, `prune` | `remember`, `remember_batch`, `recall`, `list_facts`, `forget`, `share` | recall/embeddings only |
 | Plans | `plan new/list/show/approve/start/complete/abandon/diff/policy` | `plan_current/create/amend/status` | no |
 | Risk | `risk assess` | `risk_assess` | no |
-| Architecture map | `map build/deps/dependents` | `map_query`, `map_neighbours` | no |
+| Architecture map | `map build/deps/dependents`, `symbols` | `map_query`, `map_neighbours` | no |
 | Background index | `index [--full]`, `watch` | — | no |
 | Context | `context bootstrap/preview/explain` | `context_bootstrap`, `context_before_edit` | no |
 | Auto-capture + review | `memory review list/show/approve/reject/edit` | `context_after_turn` | no |
 | Token savings | `savings` | (savings embedded in context tools) | no |
 | Suggestions | `suggest` | `code_suggestions` | no |
 | Client templates | `rules show/install` | — | no |
+| Hook automation | `hooks install/status/uninstall` | — | no |
 | Setup/health | `use`, `init`, `migrate`, `postgres`, `db doctor/test`, `doctor`, `claude`, `codex`, `serve` | — | varies |
 
 Everything under Proposal 04 (04.1–04.8) is implemented. The only
@@ -46,8 +47,9 @@ skips without a live database).
 
 ## 3. How "automatic" it is today — the honest version
 
-CodeBuddy is **agent-driven automatic**, not **hook-enforced automatic**. This
-distinction matters, so it is stated plainly.
+CodeBuddy now supports **both** advisory, agent-driven automation and
+deterministic hook-enforced automation. The distinction still matters, so it is
+stated plainly below.
 
 ### What is automatic for the user
 
@@ -188,17 +190,15 @@ in, the bigger the absolute saving.
 
 ## 7. Known limitations (today)
 
-1. **Automation is agent-driven, not hook-enforced** (see §3). No deterministic
-   per-prompt / per-edit trigger yet.
-2. **Whole-file granularity.** Context represents files as one-line summaries;
-   it does not yet slice to the specific functions/symbols a task needs.
-3. **No cross-turn dedupe.** If two turns touch the same file, its capsule can be
+1. **Hooks are Claude-only.** Deterministic hook-enforced automation is shipped
+   for Claude Code; Codex still relies on the advisory workflow template.
+2. **No cross-turn dedupe.** If two turns touch the same file, its capsule can be
    sent twice within a session — there is no "already sent this" ledger.
-4. **Path/degree-ranked, not relevance-ranked.** Before-edit context is driven by
+3. **Path/degree-ranked, not relevance-ranked.** Before-edit context is driven by
    paths + import degree, not by semantic similarity to the task string.
-5. **Estimated tokens, not a real tokenizer.** Good for comparison and budgeting;
+4. **Estimated tokens, not a real tokenizer.** Good for comparison and budgeting;
    not exact provider accounting.
-6. **Postgres recovery/integration is environment-gated** in CI (one skipped test).
+5. **Postgres recovery/integration is environment-gated** in CI (one skipped test).
 
 Each of these is addressed as a concrete milestone in
 [roadmap.md](roadmap.md).
