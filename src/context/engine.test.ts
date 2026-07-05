@@ -121,6 +121,9 @@ describe("buildBeforeEditContext", () => {
     expect(ctx.neighbours.find((n) => n.path === "src/auth/oauth.ts")?.dependsOn).toContain(
       "src/auth/verify.ts",
     );
+    // N.3: the target file's public API is returned as signatures, not full source.
+    const api = ctx.symbols.find((s) => s.path === "src/auth/oauth.ts");
+    expect(api?.signatures.some((sig) => sig.includes("login"))).toBe(true);
   });
 
   it("resolves target files from a plan id", async () => {

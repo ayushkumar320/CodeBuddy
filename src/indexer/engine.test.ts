@@ -36,6 +36,18 @@ describe("indexRepository", () => {
     expect(manifest.entries["logo.png"]).toBeUndefined();
   });
 
+  it("records a symbol table for code files (N.3)", async () => {
+    const root = await tempRepo();
+    await writeFile(join(root, "a.ts"), "export function login() {}\nexport const MAX = 1;\n");
+    await writeFile(join(root, "README.md"), "# Title\n");
+
+    await indexRepository({ repositoryRoot: root });
+    const manifest = await new IndexStore(root).read();
+    expect(manifest.entries["a.ts"]?.symbolTable?.map((s) => s.name)).toEqual(["login", "MAX"]);
+    // Non-code files carry no symbol table.
+    expect(manifest.entries["README.md"]?.symbolTable).toBeUndefined();
+  });
+
   it("skips unchanged files on the second pass", async () => {
     const root = await tempRepo();
     await writeFile(join(root, "a.ts"), "export const a = 1;\n");

@@ -2,7 +2,7 @@
 
 A precise, honest snapshot of what ships today: what is built, how automatic it
 really is, how context is captured and recalled, and where the current limits
-are. Companion to [next-plans.md](next-plans.md), which designs what comes next.
+are. Companion to [roadmap.md](roadmap.md), which designs what comes next.
 
 - **Version:** 2.0.0
 - **Status:** Proposal 04 (Automatic Context Engine) complete. Full verification
@@ -201,7 +201,7 @@ in, the bigger the absolute saving.
 6. **Postgres recovery/integration is environment-gated** in CI (one skipped test).
 
 Each of these is addressed as a concrete milestone in
-[next-plans.md](next-plans.md).
+[roadmap.md](roadmap.md).
 
 ---
 

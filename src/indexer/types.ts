@@ -8,6 +8,8 @@
  * extracted with simple, stable heuristics.
  */
 
+import type { SymbolSpan } from "./symbols.js";
+
 export const INDEX_MANIFEST_VERSION = 1 as const;
 
 /** One indexed file. Everything here is reproducible from the file contents. */
@@ -24,6 +26,12 @@ export type IndexEntry = {
   lines: number;
   /** Best-effort top-level/exported symbol names. Empty for non-code files. */
   symbols: string[];
+  /**
+   * Optional richer symbol table (name/kind/range/signature) for code files —
+   * the basis for symbol-level context (Roadmap N.3). Absent for non-code files
+   * and older manifests, so consumers must treat it as optional.
+   */
+  symbolTable?: SymbolSpan[];
   /** Deterministic one-line summary. */
   summary: string;
   /** ISO timestamp of when this entry was (re)computed. */

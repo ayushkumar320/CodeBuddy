@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { listIndexableFiles } from "./scan.js";
 import { IndexStore } from "./store.js";
 import { summarizeSource } from "./summary.js";
+import { extractSymbolTable, supportsSymbols } from "./symbols.js";
 import {
   INDEX_MANIFEST_VERSION,
   type IndexEntry,
@@ -65,6 +66,7 @@ export async function indexRepository(options: IndexOptions = {}): Promise<Index
       }
 
       const { language, lines, symbols, summary } = summarizeSource(path, content);
+      const symbolTable = supportsSymbols(path) ? extractSymbolTable(content) : [];
       entries[path] = {
         path,
         hash,
@@ -72,6 +74,7 @@ export async function indexRepository(options: IndexOptions = {}): Promise<Index
         language,
         lines,
         symbols,
+        ...(symbolTable.length > 0 ? { symbolTable } : {}),
         summary,
         indexedAt: now().toISOString(),
       };

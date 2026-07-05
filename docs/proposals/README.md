@@ -42,17 +42,11 @@ Markdown memory + plans ──▶ Risk Panel MVP
              └────────────▶ Architecture Map MVP
 ```
 
-## Execution order
+## Execution history
 
-Recommended next proposal execution:
-
-1. Build Proposal 04 Phase 1: setup hardening and trust checks.
-2. Build Proposal 04 Phase 2: `context_bootstrap` and `context_before_edit`.
-3. Build Proposal 04 Phase 3: background indexing and summaries.
-4. Build Proposal 04 Phase 4: automatic memory extraction and review queue.
-
-Detailed execution packets and Codex/Claude prompts live under
-[`docs/build/`](../build/README.md).
+Proposal 04 was implemented in phased packets and is now fully shipped. The
+temporary build-packet docs were removed after completion to keep the repo
+focused on current behavior and remaining roadmap work.
 
 ## Conventions for new proposals
 
