@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadPlanPolicy } from "../core/config-file.js";
-import { type IncidentFactFile, MemoryFileStore } from "../core/memory-file-store.js";
+import {
+  type FactFile,
+  type IncidentFactFile,
+  MemoryFileStore,
+} from "../core/memory-file-store.js";
 import { PlanFileStore, type PlanSpec } from "../core/plan-file-store.js";
 import { PlanLifecycle } from "../core/plan-lifecycle.js";
 import { extractSymbolTable, supportsSymbols, symbolSignatures } from "../indexer/symbols.js";
@@ -21,6 +25,7 @@ import type {
   PathSource,
   PlanSummary,
   PolicyRuleSummary,
+  RelevantFactSummary,
   TokenStats,
 } from "./types.js";
 
@@ -39,6 +44,7 @@ const LIMITS = {
   incidentSummaryChars: 140,
   symbolFiles: 10,
   symbolsPerFile: 12,
+  relevantFacts: 5,
 } as const;
 
 const DEFAULT_TOKEN_BUDGET = 4_000;
@@ -57,7 +63,13 @@ export type BeforeEditInput = {
   planId?: string;
   useGit?: boolean;
   tokenBudget?: number;
+  semanticRanker?: SemanticRelevanceRanker;
 };
+
+export type SemanticRelevanceRanker = (
+  task: string,
+  candidates: Array<{ id: string; text: string }>,
+) => Promise<Record<string, number>>;
 
 /**
  * Assemble compact project awareness for the start of a turn: identity, the
@@ -71,11 +83,12 @@ export async function buildBootstrapContext(input: BootstrapInput): Promise<Boot
   const planStore = new PlanFileStore(repositoryRoot);
   const memoryStore = new MemoryFileStore(repositoryRoot);
 
-  const [activePlan, policy, policyFile, incidents, map] = await Promise.all([
+  const [activePlan, policy, policyFile, incidents, facts, map] = await Promise.all([
     new PlanLifecycle(planStore).current(namespace),
     loadPlanPolicy(repositoryRoot),
     readPolicyFile(join(repositoryRoot, ".codebuddy", "policies.yaml")),
     memoryStore.listIncidentFacts({ namespace }),
+    memoryStore.listFacts(),
     buildArchitectureMap(repositoryRoot),
   ]);
 
@@ -97,15 +110,18 @@ export async function buildBootstrapContext(input: BootstrapInput): Promise<Boot
     `architecture: ${architecture.moduleCount} module(s), ${architecture.edgeCount} edge(s)`,
   );
 
-  const partial = {
+  const bootstrapFacts = await rankRelevantFacts(facts, namespace, "", []);
+  const assembled = {
     project: { namespace, root: repositoryRoot },
     plan,
     policy,
     policyRules,
     incidents: incidentSummaries,
+    facts: bootstrapFacts,
     architecture,
     explain,
   };
+  const partial = enforceBootstrapBudget(assembled, input.tokenBudget ?? DEFAULT_TOKEN_BUDGET);
   const tokens = await buildTokenStats(
     repositoryRoot,
     partial,
@@ -136,11 +152,12 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
   const planStore = new PlanFileStore(repositoryRoot);
   const memoryStore = new MemoryFileStore(repositoryRoot);
 
-  const [referencedPlan, policy, policyFile, incidents, risks, map] = await Promise.all([
+  const [referencedPlan, policy, policyFile, incidents, facts, risks, map] = await Promise.all([
     resolveRelevantPlan(planStore, namespace, input.planId),
     loadPlanPolicy(repositoryRoot),
     readPolicyFile(join(repositoryRoot, ".codebuddy", "policies.yaml")),
     memoryStore.findIncidentFactsForPaths({ namespace, paths: targetPaths }),
+    memoryStore.listFacts(),
     assessRisk({
       repositoryRoot,
       namespace,
@@ -173,13 +190,24 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
   if (neighbours.length > 0)
     explain.push(`neighbours: import graph for ${neighbours.length} file(s)`);
 
-  const symbols = await computeTargetSymbols(repositoryRoot, targetPaths);
+  const symbols = await computeTargetSymbols(repositoryRoot, targetPaths, input.task);
   if (symbols.length > 0)
     explain.push(
       `symbols: signatures for ${symbols.length} target file(s) (in place of full source)`,
     );
 
-  const partial = {
+  const relevantFacts = await rankRelevantFacts(
+    facts,
+    namespace,
+    input.task ?? "",
+    targetPaths,
+    input.semanticRanker,
+  );
+  if (relevantFacts.length > 0) {
+    explain.push(`facts: ${relevantFacts.length} durable fact(s) ranked by task/path relevance`);
+  }
+
+  const assembled = {
     project: { namespace, root: repositoryRoot },
     task: input.task ?? null,
     targetPaths,
@@ -188,11 +216,13 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
     policy,
     policyRules,
     incidents: incidentSummaries,
+    facts: relevantFacts,
     risks,
     neighbours,
     symbols,
     explain,
   };
+  const partial = enforceBeforeEditBudget(assembled, input.tokenBudget ?? DEFAULT_TOKEN_BUDGET);
   // The context stands in for the target files and their import neighbours —
   // exactly what an agent would otherwise open and read.
   const representedPaths = [
@@ -208,6 +238,81 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
     input.tokenBudget,
   );
   return { ...partial, tokens };
+}
+
+/**
+ * Enforce budgets before token statistics are attached. Mandatory identity and
+ * path fields form the minimal envelope; optional sections are removed from
+ * lowest to highest value until the serialized context fits.
+ */
+function enforceBootstrapBudget<T extends Omit<BootstrapContext, "tokens">>(
+  input: T,
+  budget: number,
+): T {
+  const output = structuredClone(input);
+  const omitted: string[] = [];
+  const fits = () => estimateTokens(output) <= budget;
+  const drop = (name: string, action: () => void) => {
+    if (fits()) return;
+    action();
+    omitted.push(name);
+  };
+  drop("architecture hotspots", () => {
+    output.architecture.hotspots = [];
+  });
+  drop("general facts", () => {
+    output.facts = [];
+  });
+  drop("active plan", () => {
+    output.plan = null;
+  });
+  drop("incidents", () => {
+    output.incidents = [];
+  });
+  drop("policy rules", () => {
+    output.policyRules = [];
+  });
+  if (!fits()) output.explain = [];
+  return output;
+}
+
+function enforceBeforeEditBudget<T extends Omit<BeforeEditContext, "tokens">>(
+  input: T,
+  budget: number,
+): T {
+  const output = structuredClone(input);
+  const omitted: string[] = [];
+  const fits = () => estimateTokens(output) <= budget;
+  const drop = (name: string, action: () => void) => {
+    if (fits()) return;
+    action();
+    omitted.push(name);
+  };
+  drop("import neighbours", () => {
+    output.neighbours = [];
+  });
+  drop("risk detail", () => {
+    output.risks.items = [];
+  });
+  drop("general facts", () => {
+    output.facts = [];
+  });
+  drop("symbols", () => {
+    output.symbols = [];
+  });
+  drop("active plan", () => {
+    output.plan = null;
+  });
+  drop("incidents", () => {
+    output.incidents = [];
+  });
+  drop("policy rules", () => {
+    output.policyRules = [];
+  });
+  if (!fits()) output.explain = [];
+  else if (omitted.length > 0) output.explain.push(`budget: omitted ${omitted.join(", ")}`);
+  if (!fits()) output.explain = [];
+  return output;
 }
 
 // ── helpers ─────────────────────────────────────────────────────────
@@ -330,19 +435,113 @@ function computeNeighbours(map: ArchitectureMap, paths: string[]): ModuleNeighbo
 async function computeTargetSymbols(
   repositoryRoot: string,
   targetPaths: string[],
+  task?: string,
 ): Promise<Array<{ path: string; signatures: string[] }>> {
   const result: Array<{ path: string; signatures: string[] }> = [];
   for (const path of targetPaths.slice(0, LIMITS.symbolFiles)) {
     if (!supportsSymbols(path)) continue;
     try {
       const content = await readFile(join(repositoryRoot, path), "utf8");
-      const signatures = symbolSignatures(extractSymbolTable(content), LIMITS.symbolsPerFile);
+      const signatures = symbolSignatures(extractSymbolTable(content), LIMITS.symbolsPerFile).sort(
+        (left, right) => relevanceScore(right, task ?? "") - relevanceScore(left, task ?? ""),
+      );
       if (signatures.length > 0) result.push({ path, signatures });
     } catch {
       // Skip files that can't be read; symbols are an enhancement, not required.
     }
   }
   return result;
+}
+
+async function rankRelevantFacts(
+  facts: FactFile[],
+  namespace: string,
+  task: string,
+  targetPaths: string[],
+  semanticRanker?: SemanticRelevanceRanker,
+): Promise<RelevantFactSummary[]> {
+  const incidentText = new Set(
+    facts
+      .filter((fact) => fact.category === "incident")
+      .map((fact) => normalizeText(fact.content || fact.object)),
+  );
+  const candidates = facts
+    .filter((fact) => fact.namespace === namespace && fact.category !== "incident")
+    .map((fact) => {
+      const text = `${fact.subject} ${fact.predicate} ${fact.object} ${fact.content}`;
+      const taskScore = relevanceScore(text, task);
+      // A path match is strong supporting evidence, but must not overwhelm a
+      // clearly different task (for example database work near an auth file).
+      const pathScore = fact.paths.some((path) => targetPaths.includes(path)) ? 5 : 0;
+      const relevance = taskScore + pathScore + Math.round(fact.confidence * 5);
+      return {
+        fact,
+        relevance,
+        reason:
+          pathScore > 0
+            ? "matches a target path"
+            : taskScore > 0
+              ? `shares ${taskScore} task relevance point(s)`
+              : "high-confidence recent project fact",
+      };
+    });
+  let semanticScores: Record<string, number> = {};
+  if (semanticRanker && task.trim()) {
+    try {
+      semanticScores = await semanticRanker(
+        task,
+        candidates.map(({ fact }) => ({
+          id: fact.id,
+          text: `${fact.subject} ${fact.predicate} ${fact.object} ${fact.content}`,
+        })),
+      );
+    } catch {
+      semanticScores = {};
+    }
+  }
+  return candidates
+    .map((candidate) => ({
+      ...candidate,
+      relevance: candidate.relevance + Math.max(0, semanticScores[candidate.fact.id] ?? 0),
+    }))
+    .filter(({ fact, relevance }) => {
+      if (incidentText.has(normalizeText(fact.content || fact.object))) return false;
+      return task.trim() === "" || relevance > Math.round(fact.confidence * 5);
+    })
+    .sort((left, right) => {
+      if (right.relevance !== left.relevance) return right.relevance - left.relevance;
+      return right.fact.createdAt.localeCompare(left.fact.createdAt);
+    })
+    .slice(0, LIMITS.relevantFacts)
+    .map(({ fact, relevance, reason }) => ({
+      id: fact.id,
+      subject: fact.subject,
+      summary: truncate(fact.content || fact.object, LIMITS.incidentSummaryChars),
+      paths: fact.paths,
+      confidence: fact.confidence,
+      relevance,
+      reason,
+    }));
+}
+
+function relevanceScore(value: string, task: string): number {
+  const terms = new Set(
+    normalizeText(task)
+      .split(" ")
+      .filter((term) => term.length > 2),
+  );
+  if (terms.size === 0) return 0;
+  const haystack = new Set(normalizeText(value).split(" "));
+  let score = 0;
+  for (const term of terms) if (haystack.has(term)) score += 3;
+  return score;
+}
+
+function normalizeText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_./-]+/g, " ")
+    .trim();
 }
 
 function classifyPathSource(input: BeforeEditInput, resolvedCount: number): PathSource {
@@ -380,7 +579,15 @@ async function buildTokenStats(
 function buildStages(payload: unknown): StageStat[] {
   if (!payload || typeof payload !== "object") return [];
   const record = payload as Record<string, unknown>;
-  const sections = ["plan", "policyRules", "incidents", "risks", "neighbours", "architecture"];
+  const sections = [
+    "plan",
+    "policyRules",
+    "incidents",
+    "facts",
+    "risks",
+    "neighbours",
+    "architecture",
+  ];
   const stages: StageStat[] = [];
   for (const stage of sections) {
     if (record[stage] === undefined || record[stage] === null) continue;

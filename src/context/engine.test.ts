@@ -148,4 +148,77 @@ describe("buildBeforeEditContext", () => {
     });
     expect(ctx.incidents).toEqual([]);
   });
+
+  it("enforces a tight token budget by dropping lower-priority context", async () => {
+    const root = await seedRepo();
+    const ctx = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      paths: ["src/auth/oauth.ts"],
+      tokenBudget: 500,
+    });
+    expect(ctx.tokens.returnedEstimate).toBeLessThanOrEqual(500);
+    expect(ctx.policyRules.map((rule) => rule.id)).toContain("auth-sensitive");
+    expect(ctx.incidents.map((incident) => incident.id)).toContain("fact_oauthincident");
+    expect(ctx.neighbours).toEqual([]);
+  });
+
+  it("ranks durable facts by the task instead of recency alone", async () => {
+    const root = await seedRepo();
+    const store = new MemoryFileStore(root);
+    const base = {
+      namespace: "proj",
+      predicate: "decided",
+      confidence: 0.9,
+      createdByAgent: "codex",
+      sourceInteractionId: null,
+      sourceDeleted: false,
+      category: "general" as const,
+      paths: ["src/auth/oauth.ts"],
+    };
+    await store.writeFact({
+      ...base,
+      id: "fact_authdecision",
+      subject: "OAuth state validation",
+      object: "validate state before exchanging the authorization code",
+      content: "OAuth callbacks validate state before exchanging the authorization code.",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+    await store.writeFact({
+      ...base,
+      id: "fact_databasedecision",
+      subject: "Database pooling",
+      object: "use a bounded Postgres connection pool",
+      content: "Database access uses a bounded Postgres connection pool.",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      paths: [],
+    });
+
+    const auth = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      task: "fix OAuth state validation",
+      paths: ["src/auth/oauth.ts"],
+    });
+    const database = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      task: "review database Postgres pooling",
+      paths: ["src/auth/oauth.ts"],
+    });
+    expect(auth.facts[0]?.id).toBe("fact_authdecision");
+    expect(database.facts[0]?.id).toBe("fact_databasedecision");
+    expect(auth.facts[0]?.reason).toMatch(/target path|relevance/);
+
+    const fallback = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      task: "fix OAuth state validation",
+      paths: ["src/auth/oauth.ts"],
+      semanticRanker: async () => {
+        throw new Error("embedding service unavailable");
+      },
+    });
+    expect(fallback.facts.map((fact) => fact.id)).toEqual(auth.facts.map((fact) => fact.id));
+  });
 });

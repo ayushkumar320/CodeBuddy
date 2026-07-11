@@ -48,6 +48,16 @@ export type IncidentSummary = {
   createdAt: string;
 };
 
+export type RelevantFactSummary = {
+  id: string;
+  subject: string;
+  summary: string;
+  paths: string[];
+  confidence: number;
+  relevance: number;
+  reason: string;
+};
+
 /** Top imported/importing modules — a cheap proxy for architectural hotspots. */
 export type ArchitectureHotspot = {
   path: string;
@@ -91,6 +101,7 @@ export type BootstrapContext = {
   policy: PlanPolicy;
   policyRules: PolicyRuleSummary[];
   incidents: IncidentSummary[];
+  facts: RelevantFactSummary[];
   architecture: ArchitectureSummary;
   tokens: TokenStats;
   /** One line per included section explaining why it is present. */
@@ -106,6 +117,7 @@ export type BeforeEditContext = {
   policy: PlanPolicy;
   policyRules: PolicyRuleSummary[];
   incidents: IncidentSummary[];
+  facts: RelevantFactSummary[];
   risks: Assessment;
   neighbours: ModuleNeighbours[];
   /** Public API (signatures) of target files, so the agent needn't read them. */
