@@ -8,8 +8,10 @@ import {
 } from "../core/memory-file-store.js";
 import { PlanFileStore, type PlanSpec } from "../core/plan-file-store.js";
 import { PlanLifecycle } from "../core/plan-lifecycle.js";
+import { IndexStore } from "../indexer/store.js";
 import { extractSymbolTable, supportsSymbols, symbolSignatures } from "../indexer/symbols.js";
-import { buildArchitectureMap } from "../map/indexer.js";
+import type { IndexManifest } from "../indexer/types.js";
+import { loadArchitectureMap } from "../map/cache.js";
 import type { ArchitectureMap } from "../map/types.js";
 import { assessRisk, resolveRiskPaths } from "../risk/service.js";
 import { matchesPolicyGlob, type PolicyRule, readPolicyFile } from "../risk/signals/policy.js";
@@ -82,14 +84,19 @@ export async function buildBootstrapContext(input: BootstrapInput): Promise<Boot
 
   const planStore = new PlanFileStore(repositoryRoot);
   const memoryStore = new MemoryFileStore(repositoryRoot);
+  const manifestPromise = new IndexStore(repositoryRoot).read();
+  const mapPromise = manifestPromise.then(
+    async (manifest) => (await loadArchitectureMap(repositoryRoot, manifest)).map,
+  );
 
-  const [activePlan, policy, policyFile, incidents, facts, map] = await Promise.all([
+  const [activePlan, policy, policyFile, incidents, facts, manifest, map] = await Promise.all([
     new PlanLifecycle(planStore).current(namespace),
     loadPlanPolicy(repositoryRoot),
     readPolicyFile(join(repositoryRoot, ".codebuddy", "policies.yaml")),
     memoryStore.listIncidentFacts({ namespace }),
     memoryStore.listFacts(),
-    buildArchitectureMap(repositoryRoot),
+    manifestPromise,
+    mapPromise,
   ]);
 
   const explain: string[] = [];
@@ -127,6 +134,7 @@ export async function buildBootstrapContext(input: BootstrapInput): Promise<Boot
     partial,
     architecture.hotspots.map((hotspot) => hotspot.path),
     input.tokenBudget,
+    manifest,
   );
   return { ...partial, tokens };
 }
@@ -151,22 +159,28 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
 
   const planStore = new PlanFileStore(repositoryRoot);
   const memoryStore = new MemoryFileStore(repositoryRoot);
+  const manifestPromise = new IndexStore(repositoryRoot).read();
+  const mapPromise = manifestPromise.then(
+    async (manifest) => (await loadArchitectureMap(repositoryRoot, manifest)).map,
+  );
 
-  const [referencedPlan, policy, policyFile, incidents, facts, risks, map] = await Promise.all([
-    resolveRelevantPlan(planStore, namespace, input.planId),
-    loadPlanPolicy(repositoryRoot),
-    readPolicyFile(join(repositoryRoot, ".codebuddy", "policies.yaml")),
-    memoryStore.findIncidentFactsForPaths({ namespace, paths: targetPaths }),
-    memoryStore.listFacts(),
-    assessRisk({
-      repositoryRoot,
-      namespace,
-      ...(input.paths !== undefined ? { paths: input.paths } : {}),
-      ...(input.planId !== undefined ? { planId: input.planId } : {}),
-      ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
-    }),
-    buildArchitectureMap(repositoryRoot),
-  ]);
+  const [referencedPlan, policy, policyFile, incidents, facts, risks, manifest, map] =
+    await Promise.all([
+      resolveRelevantPlan(planStore, namespace, input.planId),
+      loadPlanPolicy(repositoryRoot),
+      readPolicyFile(join(repositoryRoot, ".codebuddy", "policies.yaml")),
+      memoryStore.findIncidentFactsForPaths({ namespace, paths: targetPaths }),
+      memoryStore.listFacts(),
+      assessRisk({
+        repositoryRoot,
+        namespace,
+        ...(input.paths !== undefined ? { paths: input.paths } : {}),
+        ...(input.planId !== undefined ? { planId: input.planId } : {}),
+        ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
+      }),
+      manifestPromise,
+      mapPromise,
+    ]);
 
   const explain: string[] = [];
   explain.push(`paths: ${targetPaths.length} target(s) resolved from ${pathSource}`);
@@ -190,7 +204,7 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
   if (neighbours.length > 0)
     explain.push(`neighbours: import graph for ${neighbours.length} file(s)`);
 
-  const symbols = await computeTargetSymbols(repositoryRoot, targetPaths, input.task);
+  const symbols = await computeTargetSymbols(repositoryRoot, targetPaths, input.task, manifest);
   if (symbols.length > 0)
     explain.push(
       `symbols: signatures for ${symbols.length} target file(s) (in place of full source)`,
@@ -236,6 +250,7 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
     partial,
     representedPaths,
     input.tokenBudget,
+    manifest,
   );
   return { ...partial, tokens };
 }
@@ -436,13 +451,16 @@ async function computeTargetSymbols(
   repositoryRoot: string,
   targetPaths: string[],
   task?: string,
+  manifest?: IndexManifest,
 ): Promise<Array<{ path: string; signatures: string[] }>> {
   const result: Array<{ path: string; signatures: string[] }> = [];
   for (const path of targetPaths.slice(0, LIMITS.symbolFiles)) {
     if (!supportsSymbols(path)) continue;
     try {
-      const content = await readFile(join(repositoryRoot, path), "utf8");
-      const signatures = symbolSignatures(extractSymbolTable(content), LIMITS.symbolsPerFile).sort(
+      const indexed = manifest?.entries[path]?.symbolTable;
+      const table =
+        indexed ?? extractSymbolTable(await readFile(join(repositoryRoot, path), "utf8"));
+      const signatures = symbolSignatures(table, LIMITS.symbolsPerFile).sort(
         (left, right) => relevanceScore(right, task ?? "") - relevanceScore(left, task ?? ""),
       );
       if (signatures.length > 0) result.push({ path, signatures });
@@ -562,6 +580,7 @@ async function buildTokenStats(
   payload: unknown,
   representedPaths: string[],
   tokenBudget: number | undefined,
+  manifest?: IndexManifest,
 ): Promise<TokenStats> {
   const budget = tokenBudget ?? DEFAULT_TOKEN_BUDGET;
   const returnedEstimate = estimateTokens(payload ?? {});
@@ -571,6 +590,7 @@ async function buildTokenStats(
     returnedTokens: returnedEstimate,
     budget,
     stages: buildStages(payload),
+    ...(manifest ? { manifest } : {}),
   });
   return { budget, returnedEstimate, savings: stats };
 }

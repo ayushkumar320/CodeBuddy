@@ -374,6 +374,12 @@ measured multi-turn reduction, and residual risks.
 
 ## Phase 4 — Incremental performance
 
+Status: implemented and verified on 2026-07-11. Indexing maintains a versioned
+architecture cache, reparses only content-changed modules when the source set is
+stable, rebuilds safely for additions/removals/renames, and exposes deterministic
+read/reuse counters. Context loads one index snapshot and reuses it for graph,
+symbols, and savings calculations.
+
 ### Problem
 
 Bootstrap and before-edit calls rebuild the architecture map by recursively

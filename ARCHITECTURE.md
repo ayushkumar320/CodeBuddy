@@ -137,6 +137,15 @@ Rationale:
 
 ## Caching
 
+The background index maintains `.codebuddy/cache/architecture.json` as a
+versioned, rebuildable import-graph cache. Content hashes from `index.json`
+identify changed modules. When the source-file set is stable, only changed
+modules are reparsed and unchanged nodes/edges are reused; additions, removals,
+and renames trigger a correctness-first graph rebuild. Context retrieval shares
+one index snapshot across graph, symbol, and savings stages. Missing, corrupt,
+or incompatible caches fall back to rebuilding and never become source of
+truth.
+
 `CodeBuddyNode` supports recall caching with:
 
 ```ts

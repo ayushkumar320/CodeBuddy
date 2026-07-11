@@ -128,7 +128,7 @@ context_bootstrap / context_before_edit
   → policy rules matching those files                 [risk/signals/policy]
   → incident memory for those files                   [core/memory-file-store]
   → risk assessment                                   [risk/service.assessRisk]
-  → import neighbours                                 [map/indexer]
+  → cached/incremental import neighbours              [map/cache + map/indexer]
   → measure token savings vs raw source               [savings/engine]
   → return bounded, explainable payload (+ tokens)
 ```

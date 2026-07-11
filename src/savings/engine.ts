@@ -27,6 +27,7 @@ export type ComputeSavingsInput = {
   returnedTokens: number;
   budget: number;
   stages?: StageStat[];
+  manifest?: IndexManifest;
 };
 
 export type ComputeSavingsResult = {
@@ -36,7 +37,7 @@ export type ComputeSavingsResult = {
 
 export async function computeSavings(input: ComputeSavingsInput): Promise<ComputeSavingsResult> {
   const repositoryRoot = resolve(input.repositoryRoot ?? process.cwd());
-  const manifest = await new IndexStore(repositoryRoot).read();
+  const manifest = input.manifest ?? (await new IndexStore(repositoryRoot).read());
   const uniquePaths = [...new Set(input.representedPaths)].sort();
 
   const capsules: FileCapsule[] = [];

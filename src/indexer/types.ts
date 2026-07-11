@@ -64,4 +64,9 @@ export type IndexResult = {
   errors: IndexError[];
   durationMs: number;
   totalIndexed: number;
+  architecture: {
+    source: "cache" | "incremental" | "rebuild" | "fallback";
+    readFiles: number;
+    reusedFiles: number;
+  };
 };

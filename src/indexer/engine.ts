@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { refreshArchitectureCache } from "../map/cache.js";
 import { listIndexableFiles } from "./scan.js";
 import { IndexStore } from "./store.js";
 import { summarizeSource } from "./summary.js";
@@ -94,6 +95,7 @@ export async function indexRepository(options: IndexOptions = {}): Promise<Index
     entries: sortEntries(entries),
   };
   await store.write(manifest);
+  const architecture = await refreshArchitectureCache(repositoryRoot, manifest);
 
   return {
     scanned: files.length,
@@ -105,6 +107,11 @@ export async function indexRepository(options: IndexOptions = {}): Promise<Index
     errors,
     durationMs: Date.now() - start,
     totalIndexed: Object.keys(entries).length,
+    architecture: {
+      source: architecture.source,
+      readFiles: architecture.stats.readFiles,
+      reusedFiles: architecture.stats.reusedFiles,
+    },
   };
 }
 

@@ -47,6 +47,61 @@ export async function buildArchitectureMap(
   };
 }
 
+export type IncrementalMapStats = { readFiles: number; reusedFiles: number; rebuilt: boolean };
+
+/** Build or update a map from an already-known source file set. */
+export async function updateArchitectureMap(
+  repositoryRoot: string,
+  sourcePaths: string[],
+  previous: ArchitectureMap | null,
+  changedPaths: string[],
+): Promise<{ map: ArchitectureMap; stats: IncrementalMapStats }> {
+  const root = resolve(repositoryRoot);
+  const normalizedPaths = sourcePaths.map(normalize).sort();
+  const fileSet = new Set(normalizedPaths);
+  const changed = new Set(changedPaths.map(normalize));
+  const retainedModules = (previous?.modules ?? []).filter(
+    (module) => fileSet.has(module.path) && !changed.has(module.path),
+  );
+  const retainedEdges = (previous?.edges ?? []).filter(
+    (edge) => fileSet.has(edge.from) && fileSet.has(edge.to) && !changed.has(edge.from),
+  );
+  const modules = [...retainedModules];
+  const edges = [...retainedEdges];
+
+  for (const path of normalizedPaths) {
+    if (!changed.has(path)) continue;
+    const source = await readFile(join(root, path), "utf8");
+    const imports = extractImports(source);
+    const resolvedImports: string[] = [];
+    for (const specifier of imports) {
+      const resolvedImport = resolveImport(root, path, specifier.value, fileSet);
+      if (!resolvedImport) continue;
+      resolvedImports.push(resolvedImport);
+      edges.push({ from: path, to: resolvedImport, kind: specifier.kind });
+    }
+    modules.push({
+      path,
+      language: extname(path).includes("ts") ? "ts" : "js",
+      imports: [...new Set(resolvedImports)].sort(),
+    });
+  }
+
+  return {
+    map: {
+      modules: modules.sort((left, right) => left.path.localeCompare(right.path)),
+      edges: edges.sort((left, right) =>
+        `${left.from}:${left.to}`.localeCompare(`${right.from}:${right.to}`),
+      ),
+    },
+    stats: {
+      readFiles: changed.size,
+      reusedFiles: retainedModules.length,
+      rebuilt: previous === null || changed.size === normalizedPaths.length,
+    },
+  };
+}
+
 export function queryMap(map: ArchitectureMap, query: MapQuery): ModuleEdge[] {
   const limit = query.limit ?? 50;
   return map.edges
