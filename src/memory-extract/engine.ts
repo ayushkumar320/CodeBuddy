@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { generateEntityId } from "../core/ids.js";
 import { MemoryFileStore } from "../core/memory-file-store.js";
@@ -76,6 +77,7 @@ async function gate(args: {
   now: () => Date;
 }): Promise<CandidateDecision> {
   const { candidate, sensitivity } = args;
+  const fingerprint = candidateFingerprint(args.input.namespace, candidate);
   const base = {
     candidate,
     sensitive: sensitivity.sensitive,
@@ -87,7 +89,12 @@ async function gate(args: {
   }
 
   if (sensitivity.sensitive) {
-    const ref = await queue(args, `sensitive content (${sensitivity.reasons.join(", ")})`);
+    const existing = (await args.reviewStore.list()).find(
+      (item) => item.fingerprint === fingerprint,
+    );
+    const ref =
+      existing?.id ??
+      (await queue(args, `sensitive content (${sensitivity.reasons.join(", ")})`, true));
     return {
       ...base,
       outcome: "queued",
@@ -97,11 +104,23 @@ async function gate(args: {
   }
 
   if (candidate.class === "note") {
+    const existing = (await args.reviewStore.list()).find(
+      (item) => item.fingerprint === fingerprint,
+    );
+    if (existing) {
+      return { ...base, outcome: "queued", reason: "duplicate review candidate", ref: existing.id };
+    }
     const ref = await queue(args, "temporary note");
     return { ...base, outcome: "queued", reason: "temporary note held for review", ref };
   }
 
   if (candidate.confidence < AUTO_SAVE_THRESHOLD) {
+    const existing = (await args.reviewStore.list()).find(
+      (item) => item.fingerprint === fingerprint,
+    );
+    if (existing) {
+      return { ...base, outcome: "queued", reason: "duplicate review candidate", ref: existing.id };
+    }
     const ref = await queue(args, `low confidence (${candidate.confidence.toFixed(2)})`);
     return {
       ...base,
@@ -122,6 +141,11 @@ async function saveDurable(args: {
   now: () => Date;
 }): Promise<string> {
   const { candidate, input, memoryStore, now } = args;
+  const fingerprint = candidateFingerprint(input.namespace, candidate);
+  const existing = (await memoryStore.listFacts()).find(
+    (fact) => fact.namespace === input.namespace && fact.fingerprint === fingerprint,
+  );
+  if (existing) return existing.id;
   const id = generateEntityId("fact");
   const isIncident = candidate.class === "incident";
   await memoryStore.writeFact({
@@ -139,6 +163,7 @@ async function saveDurable(args: {
     category: isIncident ? "incident" : "general",
     paths: candidate.paths,
     severity: isIncident ? candidate.severity : null,
+    fingerprint,
   });
   return id;
 }
@@ -152,8 +177,10 @@ async function queue(
     now: () => Date;
   },
   reason: string,
+  redact = false,
 ): Promise<string> {
   const { candidate, input, sensitivity, reviewStore, now } = args;
+  const fingerprint = candidateFingerprint(input.namespace, candidate);
   const id = generateEntityId("rev");
   await reviewStore.write({
     id,
@@ -161,7 +188,7 @@ async function queue(
     class: candidate.class,
     subject: candidate.subject,
     predicate: candidate.predicate,
-    object: candidate.object,
+    object: redact ? "[REDACTED SENSITIVE CONTENT]" : candidate.object,
     confidence: candidate.confidence,
     paths: candidate.paths,
     severity: candidate.severity,
@@ -171,9 +198,23 @@ async function queue(
     createdAt: now().toISOString(),
     createdByAgent: input.agentId ?? null,
     sourcePlanId: input.planId ?? null,
-    content: candidate.content,
+    fingerprint,
+    content: redact ? "[REDACTED SENSITIVE CONTENT]" : candidate.content,
   });
   return id;
+}
+
+export function candidateFingerprint(namespace: string, candidate: MemoryCandidate): string {
+  const canonical = JSON.stringify({
+    namespace: namespace.trim().toLowerCase(),
+    class: candidate.class,
+    subject: candidate.subject.trim().toLowerCase(),
+    predicate: candidate.predicate.trim().toLowerCase(),
+    object: candidate.object.trim().replace(/\s+/g, " ").toLowerCase(),
+    content: candidate.content.trim().replace(/\s+/g, " ").toLowerCase(),
+    paths: [...new Set(candidate.paths.map((path) => path.replace(/\\/g, "/")))].sort(),
+  });
+  return createHash("sha256").update(canonical).digest("hex");
 }
 
 /**

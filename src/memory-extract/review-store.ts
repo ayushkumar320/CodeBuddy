@@ -37,9 +37,18 @@ const reviewSchema = z.object({
   createdAt: z.string(),
   createdByAgent: z.string().nullable(),
   sourcePlanId: z.string().nullable().default(null),
+  fingerprint: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable()
+    .default(null),
 });
 
-export type ReviewItemWrite = Omit<z.infer<typeof reviewSchema>, "schemaVersion"> & {
+export type ReviewItemWrite = Omit<
+  z.infer<typeof reviewSchema>,
+  "schemaVersion" | "fingerprint"
+> & {
+  fingerprint?: string | null;
   content: string;
 };
 export type ReviewItem = z.infer<typeof reviewSchema> & { content: string; path: string };
@@ -74,6 +83,7 @@ export class ReviewStore {
       createdAt: input.createdAt,
       createdByAgent: input.createdByAgent,
       sourcePlanId: input.sourcePlanId,
+      fingerprint: input.fingerprint,
     });
     await writeAtomic(path, composeMarkdown(frontMatter, input.content));
     return path;

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -63,6 +63,25 @@ describe("captureAfterTurn gating", () => {
     const queued = await new ReviewStore(root).list();
     expect(queued[0]?.sensitive).toBe(true);
     expect(queued[0]?.sensitiveReasons).toContain("hf-token");
+    expect(queued[0]?.content).toBe("[REDACTED SENSITIVE CONTENT]");
+    expect(await readFile(queued[0]?.path ?? "", "utf8")).not.toContain("hf_abcdefghij0123456789");
+  });
+
+  it("deduplicates replayed durable and review candidates", async () => {
+    const root = await tempRepo();
+    const incident = {
+      namespace: "proj",
+      summary: "The login crashed; root cause was a missing state parameter.",
+      changedFiles: ["src/auth/oauth.ts"],
+    };
+    await captureAfterTurn(incident, { repositoryRoot: root });
+    await captureAfterTurn(incident, { repositoryRoot: root });
+    expect(await new MemoryFileStore(root).listFacts()).toHaveLength(1);
+
+    const note = { namespace: "proj", summary: "TODO: add the callback regression test later." };
+    await captureAfterTurn(note, { repositoryRoot: root });
+    await captureAfterTurn(note, { repositoryRoot: root });
+    expect(await new ReviewStore(root).list()).toHaveLength(1);
   });
 
   it("drops chatter without saving or queuing", async () => {

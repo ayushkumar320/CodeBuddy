@@ -35,6 +35,11 @@ const factFrontMatterSchema = z.object({
   severity: z.enum(INCIDENT_SEVERITIES).nullable().default(null),
   introducedBy: z.string().nullable().default(null),
   resolvedBy: z.string().nullable().default(null),
+  fingerprint: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable()
+    .default(null),
 });
 
 const summaryFrontMatterSchema = z.object({
@@ -67,8 +72,14 @@ export type FactFileWrite = Omit<
   | "severity"
   | "introducedBy"
   | "resolvedBy"
+  | "fingerprint"
 > &
-  Partial<Pick<FactFile, "category" | "paths" | "severity" | "introducedBy" | "resolvedBy">>;
+  Partial<
+    Pick<
+      FactFile,
+      "category" | "paths" | "severity" | "introducedBy" | "resolvedBy" | "fingerprint"
+    >
+  >;
 export type IncidentFactFile = FactFile & {
   category: "incident";
   severity: IncidentSeverity;
@@ -113,6 +124,7 @@ export class MemoryFileStore {
       severity: input.severity,
       introducedBy: input.introducedBy,
       resolvedBy: input.resolvedBy,
+      fingerprint: input.fingerprint,
     };
     const frontMatter = stringifyYaml(stripUndefinedAndDefaultIncidentFields(metadata));
 

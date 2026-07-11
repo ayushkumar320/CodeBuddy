@@ -49,4 +49,14 @@ describe("HookStagingStore", () => {
     expect(await store.drain("s")).toEqual(["src/a.ts"]);
     expect(await store.read("s")).toEqual([]);
   });
+
+  it("retains concurrent additions from one process", async () => {
+    const store = new HookStagingStore(await tempRoot());
+    await Promise.all([
+      store.add("s", ["src/a.ts"]),
+      store.add("s", ["src/b.ts"]),
+      store.add("s", ["src/c.ts"]),
+    ]);
+    expect(await store.read("s")).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+  });
 });
