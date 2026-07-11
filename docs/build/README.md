@@ -19,12 +19,32 @@ Each phase file contains:
 **Start here:** [current-phase.md](./current-phase.md) — what's being built now
 and which doc drives it.
 
-## Phase files
+## Status: 05.x track complete ✅
 
-1. [05.1 Correctness Hardening](./05.1-correctness-hardening.md)
-2. [05.2 Capture and Sensitivity Hardening](./05.2-capture-and-sensitivity-hardening.md)
-3. [05.3 Test Confidence and Recovery](./05.3-test-confidence-and-recovery.md)
-4. [05.4 Repo Hygiene and Release Ergonomics](./05.4-repo-hygiene-and-release-ergonomics.md)
+All four phases are implemented, verified (typecheck/lint/test green), and
+merged/branched. The phase files below are kept as history — the scope,
+acceptance criteria, and what each one closed.
+
+| Phase | Status | Closed |
+|---|---|---|
+| [05.1 Correctness Hardening](./05.1-correctness-hardening.md) | ✅ | #1, #2, #12 |
+| [05.2 Capture and Sensitivity Hardening](./05.2-capture-and-sensitivity-hardening.md) | ✅ | #3, #4 |
+| [05.3 Test Confidence and Recovery](./05.3-test-confidence-and-recovery.md) | ✅ | #5, #6, #7 |
+| [05.4 Repo Hygiene and Release Ergonomics](./05.4-repo-hygiene-and-release-ergonomics.md) | ✅ | #10, #11 |
+
+## Next
+
+The build-doc backlog (Proposal 04 improvements) is exhausted. Next work comes
+from the roadmap, not this folder:
+
+- **N.4 — Session capsule ledger** (next, high priority): never resend a capsule
+  twice in a session; collapse an already-sent capsule to a ~1-token reference
+  until its content hash changes. See [../roadmap.md](../roadmap.md).
+- then N.5 (relevance-ranked packing) → N.6 (diff-aware + cache-aware ordering)
+  → N.7 (real tokenizer). Release items: R.1 (publish 2.0.0), R.2 (Codex hooks).
+
+If a future roadmap item needs a scoped brief, add a new `NN-*.md` execution
+packet here and point `current-phase.md` at it.
 
 ## Rules
 

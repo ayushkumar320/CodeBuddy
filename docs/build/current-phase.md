@@ -6,8 +6,16 @@ this whenever a phase starts or lands.
 ## Now building
 
 - **Phase:** none — the 05.x build track is complete.
-- **Next:** pick up roadmap work (`N.4`–`N.7`, `R.2`) from
-  [../roadmap.md](../roadmap.md), or cut a release.
+
+## Next step
+
+- **N.4 — Session capsule ledger** (roadmap, high priority, unblocked by N.3).
+- **Driving doc:** [../roadmap.md](../roadmap.md) → "N.4 — Session capsule ledger".
+- **Gist:** per-session ledger at `.codebuddy/cache/session/<sessionId>.json`
+  keyed by capsule content-hash; an already-sent capsule collapses to a
+  ~1-token reference (`capsule:ab12cd34`) until its hash changes. Deterministic,
+  with a measured multi-turn savings test.
+- After N.4: N.5 → N.6 → N.7; release items R.1 (publish 2.0.0) / R.2 (Codex hooks).
 
 ## Last completed
 
