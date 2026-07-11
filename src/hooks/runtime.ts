@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { basename, isAbsolute, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { buildBeforeEditContext, buildBootstrapContext } from "../context/engine.js";
+import { type ContextCapsule, SessionCapsuleLedger } from "../context/session-ledger.js";
 import type { BeforeEditContext, BootstrapContext } from "../context/types.js";
 import { readConfigFile } from "../core/config-file.js";
 import { captureAfterTurn } from "../memory-extract/engine.js";
@@ -46,19 +47,29 @@ export async function runContextHook(input: HookInput): Promise<string> {
   const bootstrap = await buildBootstrapContext({ repositoryRoot, namespace });
   let beforeEdit: BeforeEditContext | null = null;
   try {
-    beforeEdit = await buildBeforeEditContext({ repositoryRoot, namespace, useGit: true });
+    beforeEdit = await buildBeforeEditContext({
+      repositoryRoot,
+      namespace,
+      useGit: true,
+      ...(input.prompt ? { task: input.prompt } : {}),
+    });
   } catch {
     beforeEdit = null;
   }
-  return renderContextBlock(bootstrap, beforeEdit);
+  return renderContextBlock(
+    bootstrap,
+    beforeEdit,
+    new SessionCapsuleLedger(repositoryRoot),
+    input.session_id ?? "default",
+  );
 }
 
 /** PostToolUse(edit) → stage the changed paths for capture. */
 export async function runStageHook(input: HookInput): Promise<string[]> {
   const repositoryRoot = resolve(input.cwd ?? process.cwd());
-  const paths = extractEditedPaths(input.tool_input).map((path) =>
-    toRepoRelative(repositoryRoot, path),
-  );
+  const paths = extractEditedPaths(input.tool_input)
+    .map((path) => toRepoRelative(repositoryRoot, path))
+    .filter((path): path is string => path !== null);
   await new HookStagingStore(repositoryRoot).add(input.session_id ?? "default", paths);
   return paths;
 }
@@ -101,8 +112,10 @@ export function extractEditedPaths(toolInput: Record<string, unknown> | undefine
   return [...new Set(paths)];
 }
 
-function toRepoRelative(repositoryRoot: string, path: string): string {
-  const rel = isAbsolute(path) ? relative(repositoryRoot, path) : path;
+function toRepoRelative(repositoryRoot: string, path: string): string | null {
+  const absolute = isAbsolute(path) ? resolve(path) : resolve(repositoryRoot, path);
+  const rel = relative(repositoryRoot, absolute);
+  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
   return rel.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
@@ -158,29 +171,58 @@ function extractText(content: unknown): string {
     .trim();
 }
 
-function renderContextBlock(
+async function renderContextBlock(
   bootstrap: BootstrapContext,
   beforeEdit: BeforeEditContext | null,
-): string {
+  ledger: SessionCapsuleLedger,
+  sessionId: string,
+): Promise<string> {
   const lines: string[] = ["## CodeBuddy project context (auto-recalled)"];
-  lines.push(`project: ${bootstrap.project.namespace}`);
-  lines.push(
-    `plan: ${bootstrap.plan ? `${bootstrap.plan.title} (${bootstrap.plan.status})` : "none"} · policy=${bootstrap.policy}`,
-  );
+  const capsules: ContextCapsule[] = [
+    { key: "project", text: `project: ${bootstrap.project.namespace}` },
+    {
+      key: "plan",
+      text: `plan: ${bootstrap.plan ? `${bootstrap.plan.title} (${bootstrap.plan.status})` : "none"}`,
+    },
+    { key: "plan-policy", text: `plan policy: ${bootstrap.policy}` },
+  ];
   if (bootstrap.policyRules.length > 0) {
-    lines.push(`policies: ${bootstrap.policyRules.map((r) => `${r.id}(${r.weight})`).join(", ")}`);
+    capsules.push({
+      key: "policies",
+      text: `policies: ${bootstrap.policyRules.map((r) => `${r.id}(${r.weight})`).join(", ")}`,
+    });
   }
-  if (bootstrap.incidents.length > 0) {
+  for (const incident of bootstrap.incidents) {
+    capsules.push({
+      key: `incident:${incident.id}`,
+      text: `incident: ${incident.subject} [${incident.severity}]`,
+    });
+  }
+  for (const fact of bootstrap.facts) {
+    capsules.push({ key: `fact:${fact.id}`, text: `fact: ${fact.summary}` });
+  }
+  capsules.push({
+    key: "architecture",
+    text: `architecture: ${bootstrap.architecture.moduleCount} modules, ${bootstrap.architecture.edgeCount} edges`,
+  });
+  const delivery = await ledger.deliver(sessionId, capsules);
+  lines.push(...delivery.lines);
+  if (delivery.referenced > 0) {
     lines.push(
-      `incident hotspots: ${bootstrap.incidents.map((i) => `${i.subject} [${i.severity}]`).join("; ")}`,
+      `session context: ${delivery.referenced} unchanged capsule reference(s), ~${delivery.avoidedTokens} tokens not resent`,
     );
   }
-  lines.push(
-    `architecture: ${bootstrap.architecture.moduleCount} modules, ${bootstrap.architecture.edgeCount} edges`,
-  );
 
   if (beforeEdit && beforeEdit.targetPaths.length > 0) {
     lines.push(`current changes: ${beforeEdit.targetPaths.slice(0, 8).join(", ")}`);
+    if (beforeEdit.facts.length > 0) {
+      lines.push(
+        `relevant facts: ${beforeEdit.facts
+          .slice(0, 3)
+          .map((fact) => fact.summary)
+          .join("; ")}`,
+      );
+    }
     if (beforeEdit.risks.items.length > 0) {
       lines.push(
         `risk: ${beforeEdit.risks.items

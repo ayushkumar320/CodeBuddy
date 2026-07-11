@@ -60,6 +60,10 @@ These rules apply to every phase:
 
 ## Phase 1 — Trust and budget correctness
 
+Status: implemented and verified on 2026-07-11. Typecheck, lint, build, and all
+280 runnable tests pass; the PostgreSQL recovery integration test remains
+environment-gated and skipped.
+
 ### Problem
 
 The configured token budget is currently used to measure a completed payload,
@@ -178,6 +182,10 @@ changed files, behavioral decisions, migration considerations for existing
 
 ## Phase 2 — Task-relevant retrieval
 
+Status: implemented and verified on 2026-07-11. Deterministic task/path ranking,
+bounded general-fact retrieval, task-ranked symbols, explanations, and an
+optional failure-safe semantic ranker are wired into before-edit context.
+
 ### Problem
 
 `context_before_edit` accepts a task string but only echoes it in the response.
@@ -277,6 +285,11 @@ remaining retrieval limitations.
 ---
 
 ## Phase 3 — Cross-turn token reduction
+
+Status: implemented and verified on 2026-07-11. Claude hooks use a versioned,
+bounded, age-limited session capsule ledger with atomic writes, per-session
+locking, selective invalidation, corruption recovery, and cumulative delivery
+statistics.
 
 ### Problem
 

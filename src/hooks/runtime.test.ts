@@ -74,6 +74,17 @@ describe("runStageHook", () => {
     expect(staged).toEqual(["src/auth.ts"]);
     expect(await new HookStagingStore(root).read("s1")).toEqual(["src/auth.ts"]);
   });
+
+  it("rejects edited paths outside the repository", async () => {
+    const root = await tempRepo();
+    const staged = await runStageHook({
+      cwd: root,
+      session_id: "s1",
+      tool_input: { file_path: "../../outside.ts" },
+    });
+    expect(staged).toEqual([]);
+    expect(await new HookStagingStore(root).read("s1")).toEqual([]);
+  });
 });
 
 describe("runContextHook", () => {
@@ -86,6 +97,18 @@ describe("runContextHook", () => {
     expect(block).toContain("CodeBuddy project context");
     expect(block).toContain(`project: ${basename(root)}`);
     expect(block.length).toBeLessThanOrEqual(1800);
+  });
+
+  it("uses session capsule references on an unchanged second prompt", async () => {
+    const root = await tempRepo();
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "src", "a.ts"), "export const a = 1;\n");
+    const input = { cwd: root, session_id: "same", prompt: "review a" };
+    const first = await runContextHook(input);
+    const second = await runContextHook(input);
+    expect(first).not.toContain("capsule:");
+    expect(second).toContain("capsule:");
+    expect(second).toContain("tokens not resent");
   });
 });
 

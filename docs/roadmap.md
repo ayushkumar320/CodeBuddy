@@ -21,8 +21,8 @@ working offline fallback.
 | N.1 | `codebuddy hooks` — recall on prompt, capture on stop | ✅ shipped | — |
 | N.2 | Deterministic capture from the real edited-file set | ✅ shipped | — |
 | N.3 | Symbol-level slicing (send functions, not whole files) | ✅ shipped | — |
-| **N.4** | **Session capsule ledger (never resend a capsule)** | ⏭️ **next** | **high** |
-| N.5 | Relevance-ranked budget packing (embeddings → priority) | planned | medium |
+| **N.4** | **Session capsule ledger (never resend a capsule)** | ✅ **shipped** | — |
+| N.5 | Relevance-ranked budget packing (embeddings → priority) | in progress: deterministic ranking shipped | medium |
 | N.6 | Diff-aware context + prompt-cache-aware ordering | planned | medium |
 | N.7 | Real tokenizer behind `estimateTokens` | planned | low |
 | R.1 | Publish `2.0.0` to npm | pending your call | — |
@@ -50,18 +50,20 @@ as signatures (`symbols[]`) in place of its full source, and `codebuddy symbols
 non-code languages fall back to the whole-file summary. Covered by tests for
 extraction, ranges, signatures, manifest round-trip, and the context payload.
 
-### N.4 — Session capsule ledger (repetition)
+### N.4 — Session capsule ledger (repetition) — ✅ SHIPPED
 
 **Problem:** across a session the same capsule can be sent every turn.
 
-**Plan:** a per-session ledger keyed by capsule content-hash id at
+**Implementation:** a per-session ledger keyed by capsule content-hash id at
 `.codebuddy/cache/session/<sessionId>.json`. Once sent, a capsule is replaced by
 a ~1-token reference (`capsule:ab12cd34`) until its hash changes. Turns repeated
 context from O(turns × files) to O(distinct capsules).
 
-**Acceptance criteria:** ledger read/write + eviction on hash change; context
-tools emit references for already-sent capsules; measured saving across a
-simulated multi-turn session; deterministic.
+Claude hook context emits full stable capsules once, then short references until
+their content changes. The ledger is versioned, bounded to 128 entries, expires
+entries after seven days, recovers from corruption, uses atomic writes and
+per-session locks, and reports sent versus avoided repeat tokens. MCP session
+identity remains a future backwards-compatible extension.
 
 ### N.5 — Relevance-ranked packing (relevance)
 

@@ -192,10 +192,13 @@ in, the bigger the absolute saving.
 
 1. **Hooks are Claude-only.** Deterministic hook-enforced automation is shipped
    for Claude Code; Codex still relies on the advisory workflow template.
-2. **No cross-turn dedupe.** If two turns touch the same file, its capsule can be
-   sent twice within a session — there is no "already sent this" ledger.
-3. **Path/degree-ranked, not relevance-ranked.** Before-edit context is driven by
-   paths + import degree, not by semantic similarity to the task string.
+2. **Hook-only cross-turn dedupe.** Claude hook context uses a session capsule
+   ledger; MCP callers do not yet pass session identity and therefore receive
+   complete responses on each call.
+3. **Deterministic relevance with optional semantic extension.** Before-edit
+   facts and symbols are task/path ranked offline. A semantic ranker interface
+   exists, but the default MCP path does not yet wire pgvector similarity into
+   packing priority.
 4. **Estimated tokens, not a real tokenizer.** Good for comparison and budgeting;
    not exact provider accounting.
 5. **Postgres recovery/integration is environment-gated** in CI (one skipped test).
