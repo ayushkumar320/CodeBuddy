@@ -121,6 +121,12 @@ Supported recall modes:
 
 The downstream LLM or agent is responsible for reconciling contradictions.
 
+Explicit decision capture can now include `supersedes fact_<id>`. The older
+fact remains on disk for audit history but is marked `supersededBy` and omitted
+from current automatic context. Incident-resolution capture similarly links to
+an unresolved incident on the same changed paths and sets `resolvedBy` instead
+of creating a duplicate incident.
+
 ## MCP Surface
 
 The current MCP server intentionally ships tools only.

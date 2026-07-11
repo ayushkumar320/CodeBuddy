@@ -49,6 +49,12 @@ describe("deterministicExtract", () => {
     expect(candidate?.class).toBe("ignored");
   });
 
+  it("routes speculative implementation claims to reviewable notes", () => {
+    const [candidate] = classesOf("We could replace the parser with a native AST later.");
+    expect(candidate?.class).toBe("note");
+    expect(candidate?.confidence).toBeLessThan(0.7);
+  });
+
   it("attaches changed files to incidents and decisions only", () => {
     const candidates = classesOf("The auth flow crashed on callback. The parser uses regex.", [
       "src/auth/oauth.ts",

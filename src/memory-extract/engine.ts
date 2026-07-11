@@ -130,7 +130,39 @@ async function gate(args: {
     };
   }
 
+  if (candidate.class === "incident" && isResolution(candidate.content)) {
+    const incidents = await args.memoryStore.findIncidentFactsForPaths({
+      namespace: args.input.namespace,
+      paths: candidate.paths,
+    });
+    const target = incidents[0];
+    if (!target) {
+      const ref = await queue(args, "incident resolution lacks a matching unresolved incident");
+      return {
+        ...base,
+        outcome: "queued",
+        reason: "resolution requires a matching unresolved incident",
+        ref,
+      };
+    }
+    await args.memoryStore.markIncidentResolved(target.id, fingerprint);
+    return {
+      ...base,
+      outcome: "saved",
+      reason: `resolved incident ${target.id}`,
+      ref: target.id,
+    };
+  }
+
   const ref = await saveDurable(args);
+  const superseded = candidate.content.match(/\bsupersedes\s+(fact_[a-z0-9]+)\b/i)?.[1];
+  if (superseded && superseded !== ref) {
+    try {
+      await args.memoryStore.markFactSuperseded(superseded, ref);
+    } catch {
+      // A missing/invalid referenced fact does not invalidate the new decision.
+    }
+  }
   return { ...base, outcome: "saved", reason: `confident ${candidate.class} auto-saved`, ref };
 }
 
@@ -164,6 +196,10 @@ async function saveDurable(args: {
     paths: candidate.paths,
     severity: isIncident ? candidate.severity : null,
     fingerprint,
+    sourcePlanId: input.planId ?? null,
+    sourceSessionId: input.sessionId ?? null,
+    verification: input.verification ?? [],
+    introducedBy: isIncident ? (input.commitSha ?? null) : null,
   });
   return id;
 }
@@ -199,9 +235,16 @@ async function queue(
     createdByAgent: input.agentId ?? null,
     sourcePlanId: input.planId ?? null,
     fingerprint,
+    sourceSessionId: input.sessionId ?? null,
+    verification: input.verification ?? [],
     content: redact ? "[REDACTED SENSITIVE CONTENT]" : candidate.content,
   });
+  await reviewStore.enforceLimit();
   return id;
+}
+
+function isResolution(content: string): boolean {
+  return /\b(fixed|resolved|closed|no longer reproduces|verified the fix)\b/i.test(content);
 }
 
 export function candidateFingerprint(namespace: string, candidate: MemoryCandidate): string {
@@ -248,6 +291,10 @@ export async function approveReviewItem(
     category: isIncident ? "incident" : "general",
     paths: item.paths,
     severity: isIncident ? (item.severity ?? "medium") : null,
+    fingerprint: item.fingerprint,
+    sourcePlanId: item.sourcePlanId,
+    sourceSessionId: item.sourceSessionId,
+    verification: item.verification,
   });
   await reviewStore.delete(id);
   return factId;

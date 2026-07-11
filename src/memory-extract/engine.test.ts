@@ -84,6 +84,56 @@ describe("captureAfterTurn gating", () => {
     expect(await new ReviewStore(root).list()).toHaveLength(1);
   });
 
+  it("persists evidence and resolves an existing incident instead of duplicating it", async () => {
+    const root = await tempRepo();
+    await captureAfterTurn(
+      {
+        namespace: "proj",
+        summary: "The upload crashed; root cause was an unclosed stream.",
+        changedFiles: ["src/upload.ts"],
+        sessionId: "sess_1",
+        planId: "pln_upload",
+        commitSha: "abc123",
+        verification: ["npm test passed"],
+      },
+      { repositoryRoot: root },
+    );
+    let facts = await new MemoryFileStore(root).listFacts();
+    expect(facts[0]?.sourceSessionId).toBe("sess_1");
+    expect(facts[0]?.sourcePlanId).toBe("pln_upload");
+    expect(facts[0]?.introducedBy).toBe("abc123");
+    expect(facts[0]?.verification).toEqual(["npm test passed"]);
+
+    const resolution = await captureAfterTurn(
+      {
+        namespace: "proj",
+        summary: "Fixed the upload crash and verified the fix.",
+        changedFiles: ["src/upload.ts"],
+      },
+      { repositoryRoot: root },
+    );
+    expect(resolution.reasons.join(" ")).toContain("resolved incident");
+    facts = await new MemoryFileStore(root).listFacts();
+    expect(facts).toHaveLength(1);
+    expect(facts[0]?.resolvedBy).not.toBeNull();
+  });
+
+  it("marks an explicitly superseded decision as historical", async () => {
+    const root = await tempRepo();
+    const first = await captureAfterTurn(
+      { namespace: "proj", summary: "We decided to use Postgres for durable storage." },
+      { repositoryRoot: root },
+    );
+    const oldId = first.saved[0]?.ref;
+    expect(oldId).toMatch(/^fact_/);
+    await captureAfterTurn(
+      { namespace: "proj", summary: `We decided to use SQLite; supersedes ${oldId}.` },
+      { repositoryRoot: root },
+    );
+    const old = (await new MemoryFileStore(root).listFacts()).find((fact) => fact.id === oldId);
+    expect(old?.supersededBy).toMatch(/^fact_/);
+  });
+
   it("drops chatter without saving or queuing", async () => {
     const root = await tempRepo();
     const result = await captureAfterTurn(

@@ -40,6 +40,10 @@ const factFrontMatterSchema = z.object({
     .regex(/^[a-f0-9]{64}$/)
     .nullable()
     .default(null),
+  sourcePlanId: z.string().nullable().default(null),
+  sourceSessionId: z.string().nullable().default(null),
+  verification: z.array(z.string()).default([]),
+  supersededBy: z.string().nullable().default(null),
 });
 
 const summaryFrontMatterSchema = z.object({
@@ -73,11 +77,24 @@ export type FactFileWrite = Omit<
   | "introducedBy"
   | "resolvedBy"
   | "fingerprint"
+  | "sourcePlanId"
+  | "sourceSessionId"
+  | "verification"
+  | "supersededBy"
 > &
   Partial<
     Pick<
       FactFile,
-      "category" | "paths" | "severity" | "introducedBy" | "resolvedBy" | "fingerprint"
+      | "category"
+      | "paths"
+      | "severity"
+      | "introducedBy"
+      | "resolvedBy"
+      | "fingerprint"
+      | "sourcePlanId"
+      | "sourceSessionId"
+      | "verification"
+      | "supersededBy"
     >
   >;
 export type IncidentFactFile = FactFile & {
@@ -125,6 +142,10 @@ export class MemoryFileStore {
       introducedBy: input.introducedBy,
       resolvedBy: input.resolvedBy,
       fingerprint: input.fingerprint,
+      sourcePlanId: input.sourcePlanId,
+      sourceSessionId: input.sourceSessionId,
+      verification: input.verification,
+      supersededBy: input.supersededBy,
     };
     const frontMatter = stringifyYaml(stripUndefinedAndDefaultIncidentFields(metadata));
 
@@ -250,6 +271,16 @@ export class MemoryFileStore {
     await rm(this.factPath(id), { force: true });
   }
 
+  async markIncidentResolved(id: string, resolvedBy: string): Promise<void> {
+    const fact = await this.readFact(id);
+    await this.writeFact(copyFact(fact, { resolvedBy }));
+  }
+
+  async markFactSuperseded(id: string, supersededBy: string): Promise<void> {
+    const fact = await this.readFact(id);
+    await this.writeFact(copyFact(fact, { supersededBy }));
+  }
+
   private factPath(id: string): string {
     if (!/^fact_[a-z0-9]+$/.test(id)) {
       throw new Error(`Invalid fact id: ${id}`);
@@ -275,6 +306,14 @@ export class MemoryFileStore {
     await assertNoSymlinkBetween(this.repositoryRoot, dirname(directory));
     await mkdir(directory, { recursive: true, mode: 0o700 });
   }
+}
+
+function copyFact(
+  fact: FactFile,
+  patch: Partial<Pick<FactFile, "resolvedBy" | "supersededBy">>,
+): FactFileWrite {
+  const { path: _path, schemaVersion: _schemaVersion, type: _type, ...write } = fact;
+  return { ...write, ...patch };
 }
 
 function stripUndefinedAndDefaultIncidentFields(

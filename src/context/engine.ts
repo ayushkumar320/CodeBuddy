@@ -484,7 +484,10 @@ async function rankRelevantFacts(
       .map((fact) => normalizeText(fact.content || fact.object)),
   );
   const candidates = facts
-    .filter((fact) => fact.namespace === namespace && fact.category !== "incident")
+    .filter(
+      (fact) =>
+        fact.namespace === namespace && fact.category !== "incident" && fact.supersededBy === null,
+    )
     .map((fact) => {
       const text = `${fact.subject} ${fact.predicate} ${fact.object} ${fact.content}`;
       const taskScore = relevanceScore(text, task);

@@ -69,6 +69,7 @@ export async function computeRepoSavings(repositoryRoot = process.cwd()): Promis
     return {
       project,
       savings: {
+        metric: "theoretical_raw_source_compression",
         available: false,
         budget: 0,
         baselineTokens: 0,
@@ -123,6 +124,7 @@ function summarize(input: {
 }): SavingsStats {
   const { baselineTokens, returnedTokens, budget } = input;
   return {
+    metric: "theoretical_raw_source_compression",
     available: baselineTokens > 0,
     budget,
     baselineTokens,

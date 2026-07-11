@@ -457,6 +457,14 @@ limits.
 
 ## Phase 5 — Evidence-backed memory and honest metrics
 
+Status: implemented and verified on 2026-07-11. Durable facts carry optional
+session, plan, commit, changed-path, and verification evidence; speculative
+claims remain reviewable; decisions can explicitly supersede older facts;
+incident resolutions update existing incidents; review overflow/expiry is
+archived locally; and savings distinguish theoretical source compression from
+observed session-context transmission. A checked-in extraction corpus guards
+the deterministic baseline.
+
 ### Problem
 
 Deterministic capture relies heavily on assistant prose and keyword matching.

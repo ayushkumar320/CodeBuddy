@@ -97,7 +97,7 @@ export function registerContextCommands(
         const savings = result.tokens.savings;
         if (savings.available) {
           const percent = Math.round((1 - savings.compressionRatio) * 100);
-          console.log(pc.bold("\nsavings:"));
+          console.log(pc.bold("\ntheoretical raw-source compression:"));
           console.log(
             `  ${pc.green(`${savings.savedTokens} tokens saved`)} ${pc.dim(`(${percent}% vs reading ${savings.representedFiles} raw file(s): ${savings.baselineTokens} → ${savings.returnedTokens})`)}`,
           );
@@ -197,7 +197,7 @@ function printTokens(ctx: BootstrapContext | BeforeEditContext): void {
   let line = `\n~${returnedEstimate} tokens returned (budget ${budget})`;
   if (savings.available) {
     const percent = Math.round((1 - savings.compressionRatio) * 100);
-    line += `; saved ~${savings.savedTokens} vs raw source (${percent}% smaller)`;
+    line += `; theoretical raw-source reduction ~${savings.savedTokens} (${percent}% smaller)`;
   }
   console.log(pc.dim(line));
 }

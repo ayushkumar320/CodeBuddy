@@ -47,6 +47,7 @@ describe("computeSavings", () => {
     expect(stats.baselineTokens).toBeGreaterThan(stats.returnedTokens);
     expect(stats.savedTokens).toBe(stats.baselineTokens - stats.returnedTokens);
     expect(stats.compressionRatio).toBeLessThan(1);
+    expect(stats.metric).toBe("theoretical_raw_source_compression");
     expect(capsules[0]?.path).toBe("src/big.ts");
   });
 

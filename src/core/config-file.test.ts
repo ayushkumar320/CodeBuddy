@@ -23,5 +23,6 @@ describe("initProjectScaffold review privacy", () => {
     const updated = await readFile(path, "utf8");
     expect(updated).toContain("/custom/");
     expect(updated.match(/\/memory\/review\//g)).toHaveLength(1);
+    expect(updated).toContain("/memory/review-archive/");
   });
 });

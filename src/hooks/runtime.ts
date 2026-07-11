@@ -89,7 +89,15 @@ export async function runCaptureHook(input: HookInput): Promise<CaptureHookResul
 
   const namespace = await resolveNamespace(repositoryRoot);
   const summary = await deriveSummary(input.transcript_path, changedFiles);
-  const result = await captureAfterTurn({ summary, changedFiles, namespace }, { repositoryRoot });
+  const result = await captureAfterTurn(
+    {
+      summary,
+      changedFiles,
+      namespace,
+      sessionId: input.session_id ?? "default",
+    },
+    { repositoryRoot },
+  );
   return { changedFiles, result };
 }
 
@@ -236,7 +244,9 @@ async function renderContextBlock(
   const savings = beforeEdit?.tokens.savings ?? bootstrap.tokens.savings;
   if (savings.available) {
     const percent = Math.round((1 - savings.compressionRatio) * 100);
-    lines.push(`token savings: ~${savings.savedTokens} (${percent}% vs raw source)`);
+    lines.push(
+      `raw-source compression estimate: ~${savings.savedTokens} tokens (${percent}% smaller)`,
+    );
   }
 
   return lines.join("\n").slice(0, CONTEXT_BLOCK_MAX_CHARS);

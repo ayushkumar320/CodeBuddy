@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
@@ -42,13 +42,17 @@ const reviewSchema = z.object({
     .regex(/^[a-f0-9]{64}$/)
     .nullable()
     .default(null),
+  sourceSessionId: z.string().nullable().default(null),
+  verification: z.array(z.string()).default([]),
 });
 
 export type ReviewItemWrite = Omit<
   z.infer<typeof reviewSchema>,
-  "schemaVersion" | "fingerprint"
+  "schemaVersion" | "fingerprint" | "sourceSessionId" | "verification"
 > & {
   fingerprint?: string | null;
+  sourceSessionId?: string | null;
+  verification?: string[];
   content: string;
 };
 export type ReviewItem = z.infer<typeof reviewSchema> & { content: string; path: string };
@@ -56,10 +60,12 @@ export type ReviewItem = z.infer<typeof reviewSchema> & { content: string; path:
 export class ReviewStore {
   readonly repositoryRoot: string;
   readonly reviewDirectory: string;
+  readonly archiveDirectory: string;
 
   constructor(repositoryRoot = process.cwd()) {
     this.repositoryRoot = resolve(repositoryRoot);
     this.reviewDirectory = join(this.repositoryRoot, ".codebuddy", "memory", "review");
+    this.archiveDirectory = join(this.repositoryRoot, ".codebuddy", "memory", "review-archive");
   }
 
   async write(input: ReviewItemWrite): Promise<string> {
@@ -84,6 +90,8 @@ export class ReviewStore {
       createdByAgent: input.createdByAgent,
       sourcePlanId: input.sourcePlanId,
       fingerprint: input.fingerprint,
+      sourceSessionId: input.sourceSessionId,
+      verification: input.verification,
     });
     await writeAtomic(path, composeMarkdown(frontMatter, input.content));
     return path;
@@ -118,6 +126,34 @@ export class ReviewStore {
 
   async delete(id: string): Promise<void> {
     await rm(this.itemPath(id), { force: true });
+  }
+
+  async archiveExpired(options: { olderThanDays?: number; now?: Date } = {}): Promise<number> {
+    const cutoff =
+      (options.now ?? new Date()).getTime() - (options.olderThanDays ?? 30) * 24 * 60 * 60 * 1000;
+    const items = await this.list();
+    let archived = 0;
+    for (const item of items) {
+      if (Date.parse(item.createdAt) >= cutoff) continue;
+      await this.archive(item);
+      archived++;
+    }
+    return archived;
+  }
+
+  async enforceLimit(maxItems = 500): Promise<number> {
+    const items = (await this.list()).sort((left, right) =>
+      left.createdAt.localeCompare(right.createdAt),
+    );
+    const overflow = Math.max(0, items.length - maxItems);
+    for (const item of items.slice(0, overflow)) await this.archive(item);
+    return overflow;
+  }
+
+  private async archive(item: ReviewItem): Promise<void> {
+    await mkdir(this.archiveDirectory, { recursive: true, mode: 0o700 });
+    await assertNoSymlinkBetween(this.repositoryRoot, this.archiveDirectory);
+    await rename(item.path, join(this.archiveDirectory, `${item.id}.md`));
   }
 
   private itemPath(id: string): string {

@@ -52,6 +52,9 @@ export type ExtractionInput = {
   planId?: string;
   taskType?: string;
   agentId?: string;
+  sessionId?: string;
+  commitSha?: string;
+  verification?: string[];
 };
 
 /** A candidate paired with the gating decision made about it. */

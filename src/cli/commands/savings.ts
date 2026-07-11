@@ -38,7 +38,7 @@ function printSavings(result: RepoSavings): void {
 
   const percent = Math.round((1 - savings.compressionRatio) * 100);
   console.log(
-    `${pc.bold("savings")} ${pc.green(`${savings.savedTokens.toLocaleString()} tokens`)} (${percent}% smaller)`,
+    `${pc.bold("theoretical raw-source compression")} ${pc.green(`${savings.savedTokens.toLocaleString()} tokens`)} (${percent}% smaller)`,
   );
   console.log(
     pc.dim(

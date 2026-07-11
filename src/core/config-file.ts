@@ -13,6 +13,7 @@ const PROJECT_GITIGNORE = [
   "/config.json",
   "/cache/",
   "/memory/review/",
+  "/memory/review-archive/",
   "/plans/.locks/",
   "/memory/.locks/",
   "",
@@ -96,9 +97,14 @@ export async function initProjectScaffold(cwd = process.cwd()): Promise<{
   const gitignorePath = join(codebuddyDir, ".gitignore");
   try {
     await access(gitignorePath, constants.F_OK);
-    const gitignore = await readFile(gitignorePath, "utf8");
-    if (!gitignore.split(/\r?\n/).includes("/memory/review/")) {
-      await writeFile(gitignorePath, `${gitignore.trimEnd()}\n/memory/review/\n`, { mode: 0o644 });
+    let gitignore = await readFile(gitignorePath, "utf8");
+    const lines = new Set(gitignore.split(/\r?\n/));
+    const missing = ["/memory/review/", "/memory/review-archive/"].filter(
+      (line) => !lines.has(line),
+    );
+    if (missing.length > 0) {
+      gitignore = `${gitignore.trimEnd()}\n${missing.join("\n")}\n`;
+      await writeFile(gitignorePath, gitignore, { mode: 0o644 });
     }
   } catch {
     await writeFile(gitignorePath, PROJECT_GITIGNORE, { mode: 0o644 });

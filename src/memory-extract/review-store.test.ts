@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -78,5 +78,18 @@ describe("ReviewStore", () => {
     const read = await store.read("rev_01abc");
     expect(read.sensitive).toBe(true);
     expect(read.sensitiveReasons).toEqual(["email"]);
+  });
+
+  it("archives expired items instead of deleting their history", async () => {
+    const root = await tempRoot();
+    const store = new ReviewStore(root);
+    await store.write(item({ createdAt: "2025-01-01T00:00:00.000Z" }));
+    expect(
+      await store.archiveExpired({ olderThanDays: 30, now: new Date("2026-07-11T00:00:00.000Z") }),
+    ).toBe(1);
+    expect(await store.list()).toEqual([]);
+    expect(
+      await readFile(join(root, ".codebuddy", "memory", "review-archive", "rev_01abc.md"), "utf8"),
+    ).toContain("Body of the review note.");
   });
 });

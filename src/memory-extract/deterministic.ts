@@ -55,6 +55,9 @@ const RULES: Rule[] = [
   },
 ];
 
+const SPECULATIVE = /\b(might|maybe|possibly|could|consider(?:ing)?|planned|planning|should)\b/i;
+const EXPLICIT_DECISION = /\b(decided|chose|agreed|settled on|adopted|switched to)\b/i;
+
 const SEVERITY_MARKERS: Array<{ severity: IncidentSeverity; regex: RegExp }> = [
   { severity: "critical", regex: /\b(critical|outage|data loss|corruption|security)\b/i },
   {
@@ -69,7 +72,16 @@ export function deterministicExtract(input: ExtractionInput): MemoryCandidate[] 
   const candidates: MemoryCandidate[] = [];
 
   for (const sentence of splitSentences(input.summary)) {
-    const rule = classify(sentence);
+    const rule =
+      SPECULATIVE.test(sentence) && !EXPLICIT_DECISION.test(sentence)
+        ? {
+            class: "note" as const,
+            subject: "speculation",
+            predicate: "consider",
+            confidence: 0.3,
+            regex: SPECULATIVE,
+          }
+        : classify(sentence);
     if (!rule) {
       candidates.push(ignoredCandidate(sentence));
       continue;

@@ -16,6 +16,7 @@ export type StageStat = {
 
 /** Cross-turn context transmission measured by the session capsule ledger. */
 export type SessionSavingsStats = {
+  metric: "observed_session_context_transmission";
   fullCapsules: number;
   referencedCapsules: number;
   sentTokens: number;
@@ -24,6 +25,7 @@ export type SessionSavingsStats = {
 
 /** Stable, machine-consumable savings summary. Future UI can rely on these keys. */
 export type SavingsStats = {
+  metric: "theoretical_raw_source_compression";
   /** True when a baseline exists to measure against (files were represented). */
   available: boolean;
   budget: number;

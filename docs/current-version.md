@@ -115,6 +115,11 @@ runs through the same confidence + sensitivity gating.
 
 Bias: prefer a missed memory over a false durable fact.
 
+Durable capture records available plan/session/commit/verification evidence.
+Speculative language is review-only. Explicit incident resolutions update a
+matching unresolved incident, and explicit supersession preserves old decisions
+as history while removing them from current automatic context.
+
 ---
 
 ## 4. Data-flow reference

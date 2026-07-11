@@ -1,0 +1,10 @@
+[
+  { "summary": "We decided to use Postgres for durable storage.", "expected": "decision" },
+  { "summary": "The upload crashed; root cause was an unclosed stream.", "expected": "incident" },
+  { "summary": "The parser uses regex to extract imports.", "expected": "fact" },
+  { "summary": "TODO: add a regression test later.", "expected": "note" },
+  { "summary": "We could replace this with a native parser.", "expected": "note" },
+  { "summary": "Maybe the database should use a larger pool.", "expected": "note" },
+  { "summary": "Thanks for the help today.", "expected": "ignored" },
+  { "summary": "Fixed the callback regression and verified the fix.", "expected": "incident" }
+]
