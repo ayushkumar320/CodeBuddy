@@ -1,7 +1,8 @@
 # CodeBuddy Context Management Improvement Plan
 
-Status: proposed  
-Source: repository and documentation audit, 2026-07-11  
+Status: completed baseline plus proposed next improvements  
+Source: repository and documentation audit, 2026-07-11; README feedback review,
+2026-07-13  
 Primary goal: make CodeBuddy a genuinely automatic, trustworthy, low-token
 context-management system for coding agents.
 
@@ -18,10 +19,12 @@ session. The working tree remains authoritative, all important decisions remain
 inspectable, and the core path continues to work without a hosted service or a
 mandatory LLM.
 
-The work is divided into five sequential phases. Complete and verify one phase
-before starting the next. Phase 1 is a release blocker because it contains
-privacy and correctness fixes. Phases 2 and 3 deliver the main product value.
-Phases 4 and 5 improve scalability and long-term memory quality.
+The original work was divided into five sequential phases. Those phases now form
+the completed baseline for the automatic context engine. The next improvement
+track should build on that baseline instead of reopening it: make compressed
+context more relational, make memory confidence evidence-backed, make agent
+workflow limits explicit, and make the documentation explain the system's
+decisions clearly enough that a user can trust them.
 
 ## Global engineering rules
 
@@ -57,6 +60,500 @@ These rules apply to every phase:
 | 5. Evidence-backed memory and honest metrics | P2 | Durable memory is traceable, maintainable, and savings are measured end to end | Phases 1–4 |
 
 ---
+
+## Next improvement track from README feedback
+
+Status: proposed on 2026-07-13.
+
+The README feedback marked `[MOBI]` points to a real next product gap:
+CodeBuddy can compress context, but compressed context must not become shallow.
+A one-line file summary saves tokens, but it can hide the relationships an
+agent needs to edit safely. The next track should move from "small summaries" to
+"small evidence-backed relation capsules."
+
+### Product diagnosis
+
+The current context engine is strongest at:
+
+- avoiding broad source reads;
+- keeping payloads bounded;
+- preserving safety evidence such as policies and incidents;
+- capturing durable memory after a turn;
+- avoiding repeated context in hook-driven sessions.
+
+The remaining weakness is not raw retrieval. It is **meaning preservation under
+compression**. A compact payload should answer:
+
+- what this file or module is responsible for;
+- what public contracts it exposes;
+- what it depends on locally;
+- what depends on it;
+- what tests or docs support it;
+- which policies, incidents, decisions, or plans make it risky;
+- whether the latest claim about it is confirmed by docs and implementation.
+
+If a capsule cannot answer those questions, the agent will either over-read the
+source again or act with false confidence.
+
+### New phase summary
+
+| Phase | Priority | Outcome | Depends on |
+|---|---:|---|---|
+| 6. Relation capsules | P1 | Replace one-line summaries as the main retrieval unit with compact file/module relation capsules | completed Phase 4 cache/index baseline |
+| 7. Evidence-backed confidence scoring | P1 | Rate memory candidates by agreement between docs, architecture, implementation, tests, and observed work | completed Phase 5 evidence metadata |
+| 8. Worklog and cross-chat continuity | P2 | Keep a chronological, inspectable record of work done, files touched, decisions made, and follow-up routes | Phase 7 preferred |
+| 9. Agent workflow discipline | P2 | Add command budgets, task modes, fallback rules, and smallest-sufficient implementation guidance | templates/hooks baseline |
+| 10. Documentation truth cleanup | P1 | Explain confidence, suggestions, fallback behavior, and graph-vs-capsule positioning clearly | can run in parallel |
+
+---
+
+## Phase 6 - Relation capsules
+
+Status: proposed.
+
+### Problem
+
+The README currently describes background indexing as building a content hash
+and one-line summary per file. That is useful for token savings, but it is not
+always enough context for safe editing. A one-line summary can say "exports
+buildBeforeEditContext" while omitting the more important information: this
+module consumes policies, plans, incident memory, file summaries, symbols,
+neighbours, and the budget packer.
+
+This creates two bad outcomes:
+
+- the agent reopens source files because the summary is too vague;
+- the agent trusts a summary that does not show dependencies or risk.
+
+The system should keep CodeBuddy's bounded, local-first design while adding a
+small relational layer per file or module.
+
+### Required implementation
+
+1. Define a `RelationCapsule` as a deterministic, compact representation of a
+   file or module.
+   - `path`
+   - `language`
+   - `purpose`
+   - `exports`
+   - `importantLocalDependencies`
+   - `knownDependents`
+   - `relatedTests`
+   - `relatedDocs`
+   - `sideEffects`
+   - `configurationTouched`
+   - `policies`
+   - `incidents`
+   - `decisions`
+   - `confidence`
+   - `explain`
+2. Build capsules from existing local evidence first.
+   - Index manifest summaries and symbol tables.
+   - Architecture cache import edges.
+   - File naming conventions for tests.
+   - Plans and memory facts with matching paths.
+   - Policies and incidents with matching globs.
+   - Leading file comments or obvious module-level documentation when available.
+3. Keep the capsule bounded.
+   - Store only the top few dependencies and dependents.
+   - Prefer exported contracts over internal implementation details.
+   - Prefer exact path and symbol matches over broad graph expansion.
+   - Include omission explanations when important candidates are dropped.
+4. Make capsules replace or enrich the current file summary in
+   `context_before_edit`.
+   - For tight budgets, emit a compressed capsule.
+   - For normal budgets, emit the full capsule.
+   - For symbol-targeted tasks, emit the capsule plus the matched symbol slice.
+5. Store capsules as rebuildable cache, not source of truth.
+   - They may live under `.codebuddy/cache/`.
+   - They must be invalidated by file hash, graph cache version, policy changes,
+     memory changes, or docs changes that affect the capsule.
+
+### Example capsule
+
+```text
+path: src/context/engine.ts
+purpose: Builds bootstrap and before-edit context payloads.
+exports:
+  - buildBootstrapContext
+  - buildBeforeEditContext
+depends_on:
+  - src/risk/service.ts: resolves targets and risk evidence
+  - src/savings/packer.ts: packs optional sections into the budget
+  - src/core/memory-file-store.ts: reads facts, decisions, and incidents
+used_by:
+  - src/cli/commands/context.ts
+  - src/mcp/tools/*
+related_tests:
+  - src/context/engine.test.ts
+risk:
+  - budget correctness
+  - memory truthfulness
+confidence:
+  score: 0.84
+  reasons:
+    - exports confirmed from symbol table
+    - dependencies confirmed from architecture cache
+    - tests inferred by path and confirmed present
+```
+
+### Acceptance criteria
+
+- A relation capsule can explain a target file's purpose, public API, key local
+  dependencies, known dependents, and related tests without reading the full
+  source.
+- `context_before_edit` under a tight budget keeps the relation capsule for the
+  target file before low-value neighbours.
+- A task that names a function receives the file capsule plus that function's
+  signature or slice.
+- Capsule generation is deterministic and works offline.
+- Capsule generation does not require a hosted service, mandatory LLM, or
+  database.
+- Capsule output includes `explain[]` reasons and omission reasons.
+- Stale capsules are invalidated by source hash and relevant cache version.
+
+### Codex execution prompt
+
+```text
+Implement Phase 6 from docs/imporvement/README.md. Preserve unrelated working
+tree changes, especially user comments in README.md.
+
+Objective: replace shallow one-line file summaries in automatic context with
+bounded relation capsules that preserve purpose, contracts, local dependencies,
+dependents, tests, docs, policies, incidents, decisions, and confidence reasons.
+
+Start by tracing the current summary and symbol flow from the indexer into
+context_before_edit. Reuse the existing index manifest, symbol table,
+architecture cache, policy matcher, and memory file store. Do not create a
+separate authoritative graph. Design a small RelationCapsule type and a builder
+that operates from existing local evidence. Keep all fields capped and
+deterministic.
+
+Integrate capsules into budget packing. Target file capsules should outrank
+secondary neighbours, but safety policies and unresolved incidents must still
+win. Under tight budgets, emit compressed capsules and explain omitted fields.
+When the task names a symbol, include the matching signature or slice beside the
+capsule.
+
+Add tests for offline deterministic capsule generation, target-file priority
+under tight budgets, source-hash invalidation, dependency/dependent extraction,
+related test detection, and omission explanations. Run typecheck, lint, tests,
+and build. Update README.md, docs/current-version.md, and docs/roadmap.md only
+after behavior is verified.
+```
+
+---
+
+## Phase 7 - Evidence-backed confidence scoring
+
+Status: proposed.
+
+### Problem
+
+The README says automatic capture can auto-save "confident facts" and queue
+"low-confidence" items, but it does not define confidence clearly enough.
+Confidence should not mean "the sentence sounds confident." It should mean
+multiple project evidence sources agree.
+
+The scoring model should compare:
+
+- architecture docs;
+- supporting docs;
+- plans and roadmap/build docs;
+- implementation files;
+- exported symbols and schemas;
+- related tests;
+- observed changed files;
+- observed verification results;
+- prior durable memory.
+
+When these sources agree, a candidate can become durable memory. When they
+conflict, the candidate should be queued for review as possible doc drift,
+stale memory, or an implementation mismatch.
+
+### Confidence levels
+
+High confidence:
+
+- architecture or supporting docs describe the behavior;
+- implementation contains matching code, exports, schemas, routes, or tests;
+- changed files or command results support the claim;
+- no current evidence directly contradicts it.
+
+Medium confidence:
+
+- implementation and agent summary agree;
+- docs are missing, vague, or stale;
+- tests are absent or indirect;
+- no direct contradiction is found.
+
+Low confidence:
+
+- only the agent summary claims it;
+- docs and implementation disagree;
+- the wording is speculative or future-looking;
+- the claim describes completed implementation without changed-file evidence;
+- the claim conflicts with newer durable memory.
+
+### Example
+
+```text
+candidate:
+  context_before_edit enforces the configured token budget before returning
+  ordinary payloads.
+
+confidence:
+  score: 0.92
+  level: high
+  reasons:
+    - docs/imporvement/README.md says Phase 1 requires enforced budgets
+    - src/context/engine.ts routes optional sections through the packer
+    - src/savings/packer.ts implements deterministic budget packing
+    - tests cover tight-budget behavior
+decision:
+  auto-save durable fact
+```
+
+Contradictory example:
+
+```text
+candidate:
+  N.4 session capsule ledger is the next roadmap item.
+
+confidence:
+  score: 0.35
+  level: low
+  reasons:
+    - docs/build/current-phase.md says N.4 is next
+    - docs/roadmap.md says N.4 is shipped
+    - implementation appears to contain session ledger support
+decision:
+  queue for review as documentation drift
+```
+
+### Required implementation
+
+1. Add a confidence scorer for memory candidates.
+   - Inputs: candidate, changed files, task summary, plan id, docs evidence,
+     implementation evidence, tests evidence, command evidence, prior memory.
+   - Output: numeric score, level, reasons, contradictions, missing evidence.
+2. Add deterministic evidence collectors.
+   - Documentation lookup by path, heading, and terms.
+   - Implementation lookup by path, symbol, schema, route, and relation capsule.
+   - Test lookup by naming convention and import/dependent relationships.
+   - Verification lookup from explicitly observed command results.
+3. Treat contradiction as first-class evidence.
+   - Conflicting docs should reduce confidence.
+   - Docs/code mismatch should queue review.
+   - Existing memory supersession should avoid returning stale truth.
+4. Store confidence metadata with durable and review items.
+   - `confidenceScore`
+   - `confidenceLevel`
+   - `evidence`
+   - `contradictions`
+   - `missingEvidence`
+   - `reviewReason`
+5. Keep the scorer conservative.
+   - Never auto-save secrets.
+   - Never auto-save speculative claims.
+   - Never auto-save implementation-complete claims without repository
+     evidence.
+
+### Acceptance criteria
+
+- Confidence reasons are visible to the user in review output.
+- A candidate supported by docs, implementation, and tests is auto-saveable.
+- A candidate supported only by assistant prose is review-only or ignored.
+- A docs/code contradiction queues a review item rather than creating durable
+  truth.
+- Confidence scoring works offline and does not require an LLM.
+- Sensitive candidates remain redacted regardless of confidence score.
+
+### Codex execution prompt
+
+```text
+Implement Phase 7 from docs/imporvement/README.md after Phase 6 is complete.
+Preserve unrelated edits.
+
+Objective: replace vague confidence gating with evidence-backed confidence
+scoring. A memory candidate should be auto-saved only when project evidence
+supports it and no stronger current evidence contradicts it.
+
+Trace captureAfterTurn, deterministic extraction, ReviewStore, and
+MemoryFileStore. Design a backwards-compatible confidence metadata schema.
+Build deterministic evidence collectors for docs, implementation symbols,
+relation capsules, related tests, changed files, observed command results, and
+prior memory. Score agreement, missing evidence, and contradictions separately.
+
+Update capture gating so high-confidence supported facts can save, medium and
+low confidence candidates queue or drop, and contradictions become explicit
+review reasons. Add tests for supported facts, assistant-only claims,
+speculative claims, docs/code mismatch, stale doc conflict, missing tests, and
+sensitive content. Update review CLI output to show confidence reasons. Run
+focused tests, typecheck, lint, full tests, and build.
+```
+
+---
+
+## Phase 8 - Worklog and cross-chat continuity
+
+Status: proposed.
+
+### Problem
+
+Durable facts and plans are useful, but they do not fully answer a practical
+question: "What did the agent actually do over time?" A user may want a compact
+history of work across chats without reading git history or raw transcripts.
+
+The system should maintain a chronological worklog that records:
+
+- task summary;
+- files touched;
+- important changes;
+- decisions made;
+- incidents found or resolved;
+- tests or commands run;
+- follow-up risks;
+- related plan;
+- related commit when available.
+
+This should be different from durable memory. A worklog is a timeline. Durable
+memory is reusable project truth.
+
+### Required implementation
+
+1. Add a local worklog store.
+   - Suggested path: `.codebuddy/worklog/` or `.codebuddy/memory/worklog/`.
+   - Use Markdown files with front matter.
+   - Keep entries readable and commit-safe, unless project config marks them
+     private.
+2. Write worklog entries after meaningful turns.
+   - Hook capture can create entries from staged files and transcript summary.
+   - MCP `context_after_turn` can create entries from changed files and summary.
+3. Link worklog entries to memory.
+   - Saved facts can cite the worklog entry that produced them.
+   - Review items can cite the worklog entry for context.
+4. Add CLI inspection.
+   - `codebuddy worklog list`
+   - `codebuddy worklog show <id>`
+   - `codebuddy worklog latest`
+   - optional `codebuddy worklog summarize --since <date>`
+5. Keep privacy explicit.
+   - Do not store raw transcripts by default.
+   - Do not store secrets.
+   - Redact sensitive snippets.
+
+### Acceptance criteria
+
+- A completed turn creates one concise worklog entry without duplicating durable
+  facts.
+- The worklog shows files touched and verification results when available.
+- A future capture can refer to prior worklog entries instead of requiring the
+  user to explain the same fix again.
+- Worklog entries are bounded and inspectable Markdown.
+- Sensitive content is redacted or omitted.
+
+---
+
+## Phase 9 - Agent workflow discipline
+
+Status: proposed.
+
+### Problem
+
+Token waste does not only come from context payloads. Agents also waste tokens
+and time by:
+
+- running unnecessary commands;
+- exploring too broadly;
+- thinking in the wrong mode for the task;
+- writing larger code than needed;
+- continuing after enough evidence is already available.
+
+CodeBuddy should help clients install workflow rules that keep the agent inside
+the smallest useful loop for the task.
+
+### Required implementation
+
+1. Add command budget guidance.
+   - A task can declare a command budget such as "light", "normal", or
+     "thorough".
+   - The agent should spend commands on highest-signal checks first.
+   - The agent should explain when it exceeds the expected budget.
+2. Add task modes.
+   - `bugfix`: reproduce, inspect narrow code, patch root cause, run focused
+     verification.
+   - `docs`: read source of truth, update docs, avoid code changes.
+   - `refactor`: preserve behavior, add characterization tests where needed.
+   - `release`: run full verification and packaging checks.
+   - `architecture`: use graph/context first, then verify against source.
+3. Add fallback rules.
+   - If a context tool fails, use cached docs and direct source reads.
+   - If Postgres is unavailable, keep file-based tools working.
+   - If the index is stale, explain degraded mode and rebuild when appropriate.
+   - If a command fails because of environment limits, report the limitation
+     without inventing success.
+4. Add smallest-sufficient-implementation guidance.
+   - Prefer existing helpers and patterns.
+   - Ask whether a simpler implementation preserves behavior.
+   - Avoid new abstractions unless they remove real complexity.
+   - Keep edits scoped to the task.
+
+### Acceptance criteria
+
+- `codebuddy rules show` includes clear tool-use and fallback rules.
+- Agent templates explain when to use each context tool and when not to.
+- Command-budget guidance is advisory but explicit.
+- Task modes can be selected or inferred without changing core engine behavior.
+- Documentation makes clear that workflow rules reduce waste but do not replace
+  verification.
+
+---
+
+## Phase 10 - Documentation truth cleanup
+
+Status: proposed.
+
+### Problem
+
+The docs currently contain both completed implementation history and next-step
+planning. Some docs can drift, for example one document may say an item is
+shipped while another still calls it next. The README also uses terms such as
+"confident facts", "suggestions", "fallback", and "graph" without enough
+examples for a new user.
+
+### Required documentation changes
+
+1. README.
+   - Remove raw planning comments after converting them into tracked docs.
+   - Explain confident vs low-confidence capture with examples.
+   - Explain how suggestions are produced from evidence.
+   - Explain fallback/degraded behavior in the feature tour.
+   - Reposition graph comparison as "bounded relation capsules vs giant
+     whole-repo graph" once Phase 6 exists.
+2. `docs/current-version.md`.
+   - Keep it as the verified-current behavior snapshot.
+   - Avoid future-tense plans here.
+3. `docs/roadmap.md`.
+   - Keep only remaining work.
+   - Mark completed work as shipped or move it to history.
+4. `docs/build/current-phase.md`.
+   - Ensure it does not name shipped work as "next".
+5. `docs/improvements.md`.
+   - Mark the old backlog as completed history if all items are closed.
+6. `docs/imporvement/README.md`.
+   - Keep this file as the detailed improvement program.
+   - Preserve the misspelled directory name unless a separate cleanup renames it.
+
+### Acceptance criteria
+
+- No doc says an item is both shipped and next.
+- README explains confidence levels with concrete examples.
+- README explains suggestion evidence.
+- README explains fallback behavior at the point where templates/hooks are
+  introduced.
+- Roadmap lists only real remaining work.
+- Improvement docs separate history from proposed future work.
 
 ## Phase 1 — Trust and budget correctness
 
