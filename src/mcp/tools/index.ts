@@ -8,52 +8,76 @@ import { PlanFileStore } from "../../core/plan-file-store.js";
 import { PlanLifecycle } from "../../core/plan-lifecycle.js";
 import type { MemoryRepository } from "../../core/repository.js";
 import type { RecallInput, RememberInput } from "../../core/types.js";
+import { IndexStore } from "../../indexer/store.js";
+import { loadArchitectureMap } from "../../map/cache.js";
 import { buildArchitectureMap, neighbours, queryMap } from "../../map/indexer.js";
 import { captureAfterTurn } from "../../memory-extract/engine.js";
 import { assessRisk } from "../../risk/service.js";
 import { generateSuggestions } from "../../suggest/engine.js";
 
+/**
+ * Input caps. The output side is bounded (LIMITS in the context engine,
+ * list_facts ≤ 100); the input side must be too — one tool call should never
+ * push megabytes of content into Postgres, the embedding queue, or a plan
+ * file that later flows back into agent context.
+ */
+const INPUT_LIMITS = {
+  contentChars: 32_000,
+  batchItems: 100,
+  summaryChars: 32_000,
+  planBodyChars: 64_000,
+  planBriefChars: 4_000,
+  titleChars: 300,
+  arrayItems: 100,
+  pathChars: 1_024,
+  taskChars: 2_000,
+  agentIdChars: 200,
+} as const;
+
 const rememberSchema = {
-  sessionId: z.string().optional(),
-  content: z.string().min(1),
+  sessionId: z.string().min(1).max(200).optional(),
+  content: z.string().min(1).max(INPUT_LIMITS.contentChars),
   type: z.enum(["interaction", "fact", "summary"]).optional(),
-  idempotencyKey: z.string().optional(),
-  agentId: z.string().optional(),
+  idempotencyKey: z.string().min(1).max(200).optional(),
+  agentId: z.string().min(1).max(INPUT_LIMITS.agentIdChars).optional(),
 };
 
 const recallSchema = {
-  sessionId: z.string().min(1),
-  query: z.string().min(1),
+  sessionId: z.string().min(1).max(200),
+  query: z.string().min(1).max(INPUT_LIMITS.taskChars),
   budget: z.number().int().positive().optional(),
-  callerModel: z.string().optional(),
+  callerModel: z.string().min(1).max(200).optional(),
   conflictMode: z.enum(["all", "latest", "highest_confidence"]).optional(),
 };
 
 const shareSchema = {
-  from: z.string().optional(),
-  to_namespace: z.string().min(1),
-  factIds: z.array(z.string().min(1)).min(1),
+  from: z.string().min(1).max(INPUT_LIMITS.agentIdChars).optional(),
+  to_namespace: z.string().min(1).max(INPUT_LIMITS.agentIdChars),
+  factIds: z.array(z.string().min(1).max(100)).min(1).max(INPUT_LIMITS.arrayItems),
   mode: z.enum(["reference", "snapshot"]).optional(),
-  agentId: z.string().optional(),
+  agentId: z.string().min(1).max(INPUT_LIMITS.agentIdChars).optional(),
 };
 
 const plannedFileSchema = z.object({
-  path: z.string().min(1),
+  path: z.string().min(1).max(INPUT_LIMITS.pathChars),
   action: z.enum(["create", "edit", "delete"]),
-  notes: z.string().optional(),
+  notes: z.string().max(INPUT_LIMITS.taskChars).optional(),
 });
 const plannedTestSchema = z.object({
-  path: z.string().min(1),
-  description: z.string().optional(),
+  path: z.string().min(1).max(INPUT_LIMITS.pathChars),
+  description: z.string().max(INPUT_LIMITS.taskChars).optional(),
 });
 const planPatchSchema = {
-  title: z.string().min(1).optional(),
-  brief: z.string().optional(),
-  body: z.string().optional(),
-  filesToTouch: z.array(plannedFileSchema).optional(),
-  testsToAdd: z.array(plannedTestSchema).optional(),
-  outOfScope: z.array(z.string()).optional(),
-  risks: z.array(z.string()).optional(),
+  title: z.string().min(1).max(INPUT_LIMITS.titleChars).optional(),
+  brief: z.string().max(INPUT_LIMITS.planBriefChars).optional(),
+  body: z.string().max(INPUT_LIMITS.planBodyChars).optional(),
+  filesToTouch: z.array(plannedFileSchema).max(INPUT_LIMITS.arrayItems).optional(),
+  testsToAdd: z.array(plannedTestSchema).max(INPUT_LIMITS.arrayItems).optional(),
+  outOfScope: z
+    .array(z.string().max(INPUT_LIMITS.pathChars))
+    .max(INPUT_LIMITS.arrayItems)
+    .optional(),
+  risks: z.array(z.string().max(INPUT_LIMITS.taskChars)).max(INPUT_LIMITS.arrayItems).optional(),
 };
 
 export const mcpToolInputSchemas = {
@@ -70,14 +94,17 @@ export const mcpToolInputSchemas = {
   share: z.object(shareSchema),
   plan_current: z.object({}),
   plan_create: z.object({
-    title: z.string().min(1),
-    brief: z.string().min(1),
-    body: z.string().optional(),
-    filesToTouch: z.array(plannedFileSchema).optional(),
-    testsToAdd: z.array(plannedTestSchema).optional(),
-    outOfScope: z.array(z.string()).optional(),
-    risks: z.array(z.string()).optional(),
-    agentId: z.string().optional(),
+    title: z.string().min(1).max(INPUT_LIMITS.titleChars),
+    brief: z.string().min(1).max(INPUT_LIMITS.planBriefChars),
+    body: z.string().max(INPUT_LIMITS.planBodyChars).optional(),
+    filesToTouch: z.array(plannedFileSchema).max(INPUT_LIMITS.arrayItems).optional(),
+    testsToAdd: z.array(plannedTestSchema).max(INPUT_LIMITS.arrayItems).optional(),
+    outOfScope: z
+      .array(z.string().max(INPUT_LIMITS.pathChars))
+      .max(INPUT_LIMITS.arrayItems)
+      .optional(),
+    risks: z.array(z.string().max(INPUT_LIMITS.taskChars)).max(INPUT_LIMITS.arrayItems).optional(),
+    agentId: z.string().min(1).max(INPUT_LIMITS.agentIdChars).optional(),
   }),
   plan_amend: z.object({ id: z.string().min(1), patch: z.object(planPatchSchema) }),
   plan_status: z.object({
@@ -88,37 +115,49 @@ export const mcpToolInputSchemas = {
     reason: z.string().optional(),
   }),
   risk_assess: z.object({
-    planId: z.string().min(1).optional(),
-    paths: z.array(z.string().min(1)).optional(),
+    planId: z.string().min(1).max(100).optional(),
+    paths: z
+      .array(z.string().min(1).max(INPUT_LIMITS.pathChars))
+      .max(INPUT_LIMITS.arrayItems)
+      .optional(),
     useGit: z.boolean().optional(),
     limit: z.number().int().positive().max(100).optional(),
   }),
   map_query: z.object({
-    from: z.string().min(1).optional(),
-    to: z.string().min(1).optional(),
+    from: z.string().min(1).max(INPUT_LIMITS.pathChars).optional(),
+    to: z.string().min(1).max(INPUT_LIMITS.pathChars).optional(),
     limit: z.number().int().positive().max(100).optional(),
   }),
   map_neighbours: z.object({
-    module: z.string().min(1),
+    module: z.string().min(1).max(INPUT_LIMITS.pathChars),
     direction: z.enum(["in", "out", "both"]).default("both"),
   }),
   context_bootstrap: z.object({}),
   context_before_edit: z.object({
-    task: z.string().min(1).optional(),
-    paths: z.array(z.string().min(1)).optional(),
-    planId: z.string().min(1).optional(),
+    task: z.string().min(1).max(INPUT_LIMITS.taskChars).optional(),
+    paths: z
+      .array(z.string().min(1).max(INPUT_LIMITS.pathChars))
+      .max(INPUT_LIMITS.arrayItems)
+      .optional(),
+    planId: z.string().min(1).max(100).optional(),
     useGit: z.boolean().optional(),
   }),
   context_after_turn: z.object({
-    summary: z.string().min(1),
-    changedFiles: z.array(z.string().min(1)).optional(),
-    planId: z.string().min(1).optional(),
-    taskType: z.string().min(1).optional(),
-    agentId: z.string().optional(),
+    summary: z.string().min(1).max(INPUT_LIMITS.summaryChars),
+    changedFiles: z
+      .array(z.string().min(1).max(INPUT_LIMITS.pathChars))
+      .max(INPUT_LIMITS.arrayItems)
+      .optional(),
+    planId: z.string().min(1).max(100).optional(),
+    taskType: z.string().min(1).max(100).optional(),
+    agentId: z.string().min(1).max(INPUT_LIMITS.agentIdChars).optional(),
   }),
   code_suggestions: z.object({
-    paths: z.array(z.string().min(1)).optional(),
-    planId: z.string().min(1).optional(),
+    paths: z
+      .array(z.string().min(1).max(INPUT_LIMITS.pathChars))
+      .max(INPUT_LIMITS.arrayItems)
+      .optional(),
+    planId: z.string().min(1).max(100).optional(),
     useGit: z.boolean().optional(),
     limit: z.number().int().positive().max(100).optional(),
   }),
@@ -367,7 +406,7 @@ export function registerCodeBuddyTools(server: McpServer, options: RegisterCodeB
       inputSchema: mcpToolInputSchemas.map_query.shape,
     },
     async (input) => {
-      const graph = await buildArchitectureMap(projectRoot);
+      const graph = await cachedMap();
       return json(
         queryMap(graph, {
           ...(input.from !== undefined ? { from: input.from } : {}),
@@ -385,14 +424,24 @@ export function registerCodeBuddyTools(server: McpServer, options: RegisterCodeB
       description: "Return inbound/outbound neighbours for a repository module.",
       inputSchema: mcpToolInputSchemas.map_neighbours.shape,
     },
-    async (input) => {
-      const graph = await buildArchitectureMap(projectRoot);
-      return json(neighbours(graph, input.module, input.direction));
-    },
+    async (input) => json(neighbours(await cachedMap(), input.module, input.direction)),
   );
 
   // ── Context engine tools (Proposal 04.2) ──────────────────────────
   const tokenBudget = options.memory.config.tokenBudget;
+
+  /**
+   * The map cache (`.codebuddy/cache/map.json`, refreshed by `codebuddy
+   * index`/`watch`) is the same source the context engine uses. Rebuilding
+   * the whole import graph per tool call wasted work and ignored incremental
+   * updates; fall back to a fresh build only when no cache exists yet.
+   */
+  const cachedMap = async () => {
+    const manifest = await new IndexStore(projectRoot).read();
+    const cached = await loadArchitectureMap(projectRoot, manifest);
+    if (cached.map.modules.length > 0) return cached.map;
+    return buildArchitectureMap(projectRoot);
+  };
 
   server.registerTool(
     "context_bootstrap",
