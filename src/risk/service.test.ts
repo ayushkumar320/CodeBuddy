@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { PlanFileStore } from "../core/plan-file-store.js";
 import { PlanLifecycle } from "../core/plan-lifecycle.js";
-import { assessRisk, resolveRiskPaths } from "./service.js";
+import { assessRisk, MAX_RESOLVED_PATHS, resolveRiskPaths } from "./service.js";
 import type { Signal } from "./types.js";
 
 const roots: string[] = [];
@@ -33,6 +33,30 @@ describe("resolveRiskPaths", () => {
     await expect(resolveRiskPaths({ repositoryRoot: root, planId: plan.id })).resolves.toEqual([
       "src/auth/oauth.ts",
     ]);
+  });
+
+  it("drops traversal escapes and caps the resolved set", async () => {
+    const root = await temporaryRoot();
+    const result = await resolveRiskPaths({
+      repositoryRoot: root,
+      paths: [
+        "src/ok.ts",
+        "../outside.txt",
+        "../../etc/passwd",
+        "/absolute/elsewhere.ts",
+        "src/../src/nested.md",
+      ],
+    });
+    // Escapes are dropped; `src/../src/nested.md` normalizes to inside the
+    // repo and is kept (as its normalized form).
+    expect(result).toEqual(["src/nested.md", "src/ok.ts"]);
+  });
+
+  it("never returns more than MAX_RESOLVED_PATHS entries", async () => {
+    const root = await temporaryRoot();
+    const many = Array.from({ length: MAX_RESOLVED_PATHS + 25 }, (_, i) => `src/f${i}.ts`);
+    const result = await resolveRiskPaths({ repositoryRoot: root, paths: many });
+    expect(result).toHaveLength(MAX_RESOLVED_PATHS);
   });
 });
 

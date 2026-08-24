@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { MemoryFileStore } from "../core/memory-file-store.js";
 import { PlanFileStore } from "../core/plan-file-store.js";
 import { RiskAssessor } from "./assessor.js";
@@ -59,19 +59,51 @@ export async function resolveRiskPaths(input: {
 }): Promise<string[]> {
   const paths = new Set<string>();
   for (const path of input.paths ?? []) {
-    if (path.trim()) paths.add(normalizePath(path));
+    if (!path.trim()) continue;
+    // Containment guard: tool callers can pass arbitrary path strings, and a
+    // `../`-style escape must never flow into file reads downstream
+    // (computeTargetSymbols, savings fallbacks, etc.). Kept paths are
+    // rewritten to their resolved repo-relative POSIX form.
+    const contained = containedRelativePath(input.repositoryRoot, path);
+    if (contained) paths.add(contained);
   }
 
   if (input.planId) {
     const plan = await new PlanFileStore(input.repositoryRoot).readPlan(input.planId);
-    for (const file of plan.filesToTouch) paths.add(normalizePath(file.path));
+    for (const file of plan.filesToTouch) {
+      const contained = containedRelativePath(input.repositoryRoot, file.path);
+      if (contained) paths.add(contained);
+    }
   }
 
   if (input.useGit || paths.size === 0) {
-    for (const path of await changedGitPaths(input.repositoryRoot)) paths.add(normalizePath(path));
+    for (const path of await changedGitPaths(input.repositoryRoot)) {
+      const contained = containedRelativePath(input.repositoryRoot, path);
+      if (contained) paths.add(contained);
+    }
   }
 
-  return [...paths].sort();
+  const resolved = [...paths].sort();
+  // Bound the change set so one huge branch cannot blow any payload derived
+  // from it. Sorted above, so the cap keeps the lexicographically-first paths.
+  return resolved.length > MAX_RESOLVED_PATHS ? resolved.slice(0, MAX_RESOLVED_PATHS) : resolved;
+}
+
+/** Hard cap on resolved target paths per assessment/context call. */
+export const MAX_RESOLVED_PATHS = 200;
+
+/**
+ * Resolve `path` against `root`; return its repo-relative POSIX form when it
+ * stays inside the repository, or null when it escapes (or is empty).
+ * Rejects NUL bytes and absolute paths pointing outside the root.
+ */
+function containedRelativePath(root: string, path: string): string | null {
+  const trimmed = normalizePath(path);
+  if (!trimmed || trimmed.includes("\0")) return null;
+  const absolute = resolve(root, trimmed);
+  const relativePath = relative(resolve(root), absolute).split(sep).join("/");
+  if (relativePath === "" || relativePath === ".." || relativePath.startsWith("../")) return null;
+  return relativePath;
 }
 
 async function changedGitPaths(repositoryRoot: string): Promise<string[]> {
