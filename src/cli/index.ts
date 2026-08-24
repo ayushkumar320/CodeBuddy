@@ -345,7 +345,13 @@ export function createCli(): Command {
     .description("Delete memories older than a duration.")
     .action(async (opts: { olderThan: string }) => {
       await withRuntime(async (runtime) => {
-        const cutoff = new Date(Date.now() - parseDuration(opts.olderThan));
+        // Guard the footgun: `--older-than 0m` computes cutoff=now and deletes
+        // every row across all namespaces. Require a strictly positive window.
+        const durationMs = parseDuration(opts.olderThan);
+        if (!Number.isFinite(durationMs) || durationMs <= 0) {
+          throw new Error("--older-than must be a positive duration (e.g. 30d, 12h, 60m).");
+        }
+        const cutoff = new Date(Date.now() - durationMs);
         console.log(JSON.stringify(await runtime.repository.pruneBefore(cutoff), null, 2));
       });
     });
