@@ -186,7 +186,13 @@ export class PlanLifecycle {
   }
 
   async amend(id: string, patch: AmendPlanPatch): Promise<PlanSpec> {
-    return this.store.withPlanLock(id, async () => {
+    // Amend takes the NAMESPACE lock, like every lifecycle transition. The
+    // per-plan lock alone let an amend interleave with e.g. abandon():
+    // amend reads `draft` -> abandon writes `abandoned` -> amend writes back
+    // its stale full snapshot, resurrecting the plan as `draft`. One shared
+    // mutex makes read-check-write atomic across all mutators.
+    const current = await this.require(id);
+    return this.store.withNamespaceLock(current.namespace, async () => {
       const fresh = await this.require(id);
       if (!AMENDABLE.includes(fresh.status)) {
         throw new Error(

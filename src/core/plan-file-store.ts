@@ -257,7 +257,7 @@ export class PlanFileStore {
     try {
       return await fn();
     } finally {
-      await rm(lockPath, { force: true });
+      await releaseOwnedLock(lockPath);
     }
   }
 
@@ -313,4 +313,21 @@ function formatIssues(error: z.ZodError): string[] {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Delete `lockPath` only when it still belongs to this process. If a holder's
+ * work ran past `staleMs`, another client may have stolen and re-created the
+ * lock — deleting it unconditionally would release *their* critical section.
+ */
+async function releaseOwnedLock(lockPath: string): Promise<void> {
+  try {
+    const contents = await readFile(lockPath, "utf8");
+    const ownerPid = Number.parseInt(contents.split("\n")[0] ?? "", 10);
+    if (ownerPid === process.pid) {
+      await rm(lockPath, { force: true });
+    }
+  } catch {
+    // Lock already vanished (stolen then released) — nothing to release.
+  }
 }
