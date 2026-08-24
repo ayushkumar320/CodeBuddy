@@ -50,7 +50,12 @@ export async function captureAfterTurn(
   const reasons: string[] = [];
 
   for (const candidate of candidates) {
-    const sensitivity = scanSensitive(`${candidate.content} ${candidate.object}`);
+    // Scan every LLM-supplied text surface — content, object AND subject.
+    // The subject is written into durable front matter, so a secret there
+    // would be just as much of a leak as one in the body.
+    const sensitivity = scanSensitive(
+      `${candidate.content} ${candidate.object} ${candidate.subject}`,
+    );
     const decision = await gate({
       candidate,
       input,

@@ -22,19 +22,34 @@ describe("scanSensitive", () => {
   });
 
   it("flags additional vendor key shapes", () => {
-    expect(scanSensitive("use sk-ant-api03-AbCdEfGhIjKlMnOpQrStUv token").reasons).toContain(
-      "openai-key",
-    );
-    expect(scanSensitive("GOOGLE=AIzaabcdefghijklmnopqrstuvwxyz123456789").reasons).toContain(
-      "google-api-key",
-    );
-    expect(scanSensitive("stripe sk_live_abcdefghijklmnop123456").reasons).toContain("stripe-key");
-    expect(
-      scanSensitive("token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3.abcDEF123456")
-        .reasons,
-    ).toContain("jwt");
-    expect(scanSensitive("DB=postgres://admin:s3cr3tPass@db.internal:5432/app").reasons).toContain(
-      "connection-string-credentials",
+    // Sample tokens are built programmatically so no literal secret-shaped
+    // string needs to live in this source file.
+    const openaiKey = `sk-ant-api03-${"Ab".repeat(12)}`;
+    const googleKey = `AIza${"a".repeat(35)}`;
+    const stripeKey = `sk_live_${"a".repeat(24)}`;
+    const jwt = `eyJ${"A".repeat(12)}.eyJ${"B".repeat(12)}.${"C".repeat(12)}`;
+    const connString = `postgres://admin:${"s3cr3tPass"}@db.internal:5432/app`;
+    expect(scanSensitive(`use ${openaiKey} token`).reasons).toContain("openai-key");
+    expect(scanSensitive(`GOOGLE=${googleKey}`).reasons).toContain("google-api-key");
+    expect(scanSensitive(`stripe ${stripeKey}`).reasons).toContain("stripe-key");
+    expect(scanSensitive(`token ${jwt}`).reasons).toContain("jwt");
+    expect(scanSensitive(`DB=${connString}`).reasons).toContain("connection-string-credentials");
+  });
+
+  it("flags GitHub fine-grained PATs, npm tokens, and GitLab tokens", () => {
+    const pat = `github_pat_${"A".repeat(30)}_${"a".repeat(30)}`;
+    expect(scanSensitive(`use ${pat} for CI`).reasons).toContain("github-fine-grained-pat");
+    const npmToken = `npm_${"Z1x2y3z4".repeat(5).slice(0, 36)}`;
+    expect(scanSensitive(`registry token ${npmToken}`).reasons).toContain("npm-token");
+    const gitlabToken = `glpat-${"Ab12Cd34Ef56Gh78Ij90".slice(0, 20)}`;
+    expect(scanSensitive(`gitlab ${gitlabToken}`).reasons).toContain("gitlab-token");
+  });
+
+  it("flags Basic-auth headers and authorization keyword assignments", () => {
+    const basic = `Authorization: Basic ${"dXNlcjpwYXNzd29yZA==".slice(0, 8)}${"QQ=="}`;
+    expect(scanSensitive(basic).reasons).toContain("basic-auth-header");
+    expect(scanSensitive(`authorization = Bq7vWx2mN9pQ`).reasons).toContain(
+      "credential-assignment",
     );
   });
 

@@ -20,6 +20,13 @@ const PATTERNS: Array<{ label: string; regex: RegExp }> = [
   { label: "aws-access-key", regex: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/ },
   { label: "hf-token", regex: /\bhf_[A-Za-z0-9]{16,}\b/ },
   { label: "github-token", regex: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/ },
+  // GitHub fine-grained personal access tokens.
+  {
+    label: "github-fine-grained-pat",
+    regex: /\bgithub_pat_[A-Za-z0-9_]{22,255}_[A-Za-z0-9]{22,255}\b/,
+  },
+  { label: "npm-token", regex: /\bnpm_[A-Za-z0-9]{36}\b/ },
+  { label: "gitlab-token", regex: /\bglpat-[A-Za-z0-9_-]{20,}\b/ },
   { label: "slack-token", regex: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
   { label: "bearer-token", regex: /\bBearer\s+[A-Za-z0-9._-]{12,}\b/ },
   // Vendor API keys with distinctive, low-false-positive prefixes.
@@ -38,7 +45,13 @@ const PATTERNS: Array<{ label: string; regex: RegExp }> = [
     // Deliberately eager — an over-flagged review item is cheaper than a leak.
     label: "credential-assignment",
     regex:
-      /\b(?:api[_-]?key|secret|token|password|passwd|pwd|access[_-]?key)\b\s*(?:[:=]|\bis\b|\bwas\b|\bequals\b)\s*\S{6,}/i,
+      /\b(?:api[_-]?key|secret|token|password|passwd|pwd|access[_-]?key|authorization|auth[_-]?token|credential[s]?)\b\s*(?:[:=]|\bis\b|\bwas\b|\bequals\b)\s*\S{6,}/i,
+  },
+  // HTTP Basic-auth style inline credentials outside a URL scheme
+  // (`Authorization: Basic dXNlcjpwYXNz`).
+  {
+    label: "basic-auth-header",
+    regex: /\bAuthorization\s*[:=]\s*Basic\s+[A-Za-z0-9+/=]{8,}/i,
   },
   { label: "email", regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/ },
 ];
