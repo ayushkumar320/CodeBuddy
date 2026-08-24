@@ -129,6 +129,9 @@ export async function buildBootstrapContext(input: BootstrapInput): Promise<Boot
     explain,
   };
   const partial = enforceBootstrapBudget(assembled, input.tokenBudget ?? DEFAULT_TOKEN_BUDGET);
+  if (partial.explain.some((entry) => entry.startsWith("budget: omitted"))) {
+    explain.push(...partial.explain.filter((entry) => entry.startsWith("budget: omitted")));
+  }
   const tokens = await buildTokenStats(
     repositoryRoot,
     partial,
@@ -288,6 +291,8 @@ function enforceBootstrapBudget<T extends Omit<BootstrapContext, "tokens">>(
     output.policyRules = [];
   });
   if (!fits()) output.explain = [];
+  else if (omitted.length > 0) output.explain.push(`budget: omitted ${omitted.join(", ")}`);
+  if (!fits()) output.explain = [];
   return output;
 }
 
@@ -424,19 +429,19 @@ function summarizeArchitecture(map: ArchitectureMap): ArchitectureSummary {
 function computeNeighbours(map: ArchitectureMap, paths: string[]): ModuleNeighbours[] {
   const result: ModuleNeighbours[] = [];
   for (const path of paths.slice(0, LIMITS.neighbourPaths)) {
-    const dependsOn = map.edges
-      .filter((edge) => edge.from === path)
-      .map((edge) => edge.to)
-      .slice(0, LIMITS.neighbourEdges);
-    const dependedOnBy = map.edges
-      .filter((edge) => edge.to === path)
-      .map((edge) => edge.from)
-      .slice(0, LIMITS.neighbourEdges);
+    // Dedupe BEFORE slicing: duplicate edges from a many-to-many import would
+    // otherwise crowd unique neighbours out of the bounded payload.
+    const dependsOn = [
+      ...new Set(map.edges.filter((edge) => edge.from === path).map((edge) => edge.to)),
+    ].slice(0, LIMITS.neighbourEdges);
+    const dependedOnBy = [
+      ...new Set(map.edges.filter((edge) => edge.to === path).map((edge) => edge.from)),
+    ].slice(0, LIMITS.neighbourEdges);
     if (dependsOn.length === 0 && dependedOnBy.length === 0) continue;
     result.push({
       path,
-      dependsOn: [...new Set(dependsOn)],
-      dependedOnBy: [...new Set(dependedOnBy)],
+      dependsOn,
+      dependedOnBy,
     });
   }
   return result;

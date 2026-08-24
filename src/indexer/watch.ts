@@ -26,6 +26,23 @@ export function createCoalescer(
   let timer: NodeJS.Timeout | null = null;
   let running = false;
   let pending = false;
+  // Trailing debounce alone starves under sustained event streams (every new
+  // event resets the window). maxWait forces a run this long after the FIRST
+  // deferred trigger, so continuous activity still indexes eventually.
+  let firstTriggerAt: number | null = null;
+  let maxWaitTimer: NodeJS.Timeout | null = null;
+
+  const clearTimers = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (maxWaitTimer) {
+      clearTimeout(maxWaitTimer);
+      maxWaitTimer = null;
+    }
+    firstTriggerAt = null;
+  };
 
   const run = async () => {
     if (running) {
@@ -40,11 +57,22 @@ export function createCoalescer(
       if (pending) {
         pending = false;
         schedule();
+      } else {
+        clearTimers();
       }
     }
   };
 
   const schedule = () => {
+    const now = Date.now();
+    if (firstTriggerAt === null) {
+      firstTriggerAt = now;
+      maxWaitTimer = setTimeout(() => {
+        timer !== null && clearTimeout(timer);
+        timer = null;
+        void run();
+      }, MAX_WAIT_MS);
+    }
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
@@ -55,11 +83,13 @@ export function createCoalescer(
   return {
     trigger: schedule,
     stop: () => {
-      if (timer) clearTimeout(timer);
-      timer = null;
+      clearTimers();
     },
   };
 }
+
+/** Hard ceiling on how long a burst of events can defer a run. */
+const MAX_WAIT_MS = 5_000;
 
 export type WatchOptions = IndexOptions & {
   debounceMs?: number;

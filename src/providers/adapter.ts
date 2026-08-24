@@ -18,6 +18,8 @@ export type ProviderCallMetadata = {
   retries: number;
   fallbackTriggered: boolean;
   coldStartWaitMs: number;
+  /** Wall-clock arrival stamp (ms epoch) set by repositories that keep call logs. */
+  recordedAt?: number;
 };
 
 export type ProviderDiagnosticsHook = (metadata: ProviderCallMetadata) => void | Promise<void>;

@@ -54,6 +54,14 @@ export async function migrateMemoryToFiles(input: {
     input.store.listFacts(),
     input.store.listSummaries(),
   ]);
+  // The DB reads are hard-capped at 100k rows; a namespace at that ceiling
+  // may be silently truncated. Say so instead of implying completeness.
+  const warnings =
+    facts.length >= 100_000 || summaries.length >= 100_000
+      ? [
+          "namespace is at or above the 100,000-row read cap; the migration may be partial — prune or export in batches",
+        ]
+      : [];
   const existingFactsById = new Map(existingFacts.map((fact) => [fact.id, fact]));
   const existingSummariesById = new Map(existingSummaries.map((summary) => [summary.id, summary]));
   const conflicts: MigrationConflict[] = [];
@@ -126,6 +134,7 @@ export async function migrateMemoryToFiles(input: {
   return {
     namespace: input.namespace,
     dryRun: !input.write,
+    ...(warnings.length > 0 ? { warnings } : {}),
     facts: {
       found: facts.length,
       existing: facts.length - factsToWrite.length - factConflicts,

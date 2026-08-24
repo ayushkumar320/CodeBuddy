@@ -157,17 +157,20 @@ async function walk(directory: string, files: string[]): Promise<void> {
 
 function extractImports(source: string): Array<{ value: string; kind: ModuleEdge["kind"] }> {
   const imports: Array<{ value: string; kind: ModuleEdge["kind"] }> = [];
-  const staticImport = /\bimport\s+(?:type\s+)?(?:[^'"()]+?\s+from\s+)?["']([^"']+)["']/g;
-  const exportFrom = /\bexport\s+[^'"()]+?\s+from\s+["']([^"']+)["']/g;
+  // Strip line/block comments first so quoted specifiers inside comments can't
+  // fabricate phantom edges in the architecture map.
+  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+  const staticImport = /\bimport\s+(?:type\s+)?(?:[^'"()+]+?\s+from\s+)?["']([^"']+)["']/g;
+  const exportFrom = /\bexport\s+[^'"()+]+?\s+from\s+["']([^"']+)["']/g;
   const dynamicImport = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 
-  for (const match of source.matchAll(staticImport)) {
+  for (const match of stripped.matchAll(staticImport)) {
     if (match[1]) imports.push({ value: match[1], kind: "import" });
   }
-  for (const match of source.matchAll(exportFrom)) {
+  for (const match of stripped.matchAll(exportFrom)) {
     if (match[1]) imports.push({ value: match[1], kind: "import" });
   }
-  for (const match of source.matchAll(dynamicImport)) {
+  for (const match of stripped.matchAll(dynamicImport)) {
     if (match[1]) imports.push({ value: match[1], kind: "dynamic_import" });
   }
   return imports;
@@ -182,10 +185,11 @@ function resolveImport(
   if (!specifier.startsWith(".")) return null;
   const base = normalize(relative(root, resolve(root, dirname(from), specifier)));
   // ESM specifiers point at emitted JS (`./x.js`), but the source on disk is
-  // `./x.ts`. Strip a trailing JS-style extension so the stem can resolve to
-  // its TypeScript/JavaScript source the same way extensionless imports do.
+  // often `./x.ts`. Try the specifier EXACTLY as written first (so a real
+  // `x.js` file wins when both `x.ts` and `x.js` exist), then fall back to the
+  // extension-stripped stem for the TS-source case.
   const stem = base.replace(/\.(js|jsx|mjs|cjs)$/, "");
-  const bases = stem === base ? [base] : [stem, base];
+  const bases = stem === base ? [base] : [base, stem];
   const candidates = bases.flatMap((b) => [
     b,
     `${b}.ts`,
