@@ -130,6 +130,8 @@ export type RecentSummary = {
 
 export type PendingEmbeddingCounts = {
   pending: number;
+  /** Claimed and inside their lease window. */
+  processing: number;
   failed: number;
   ready: number;
 };
@@ -220,7 +222,12 @@ export type MemoryRepository = {
 
   claimPendingEmbeddings(limit: number): Promise<EmbeddingJob[]>;
   markEmbeddingReady(id: string, vector: number[], model: string): Promise<void>;
-  markEmbeddingFailed(id: string, error: string, attempts: number): Promise<void>;
+  markEmbeddingFailed(
+    id: string,
+    error: string,
+    attempts: number,
+    options?: { maxAttempts?: number },
+  ): Promise<void>;
   getEmbeddingStatus(id: string): Promise<EmbeddingStatusSnapshot | null>;
 
   shareReference(input: ShareWriteInput): Promise<void>;
@@ -247,6 +254,8 @@ export type MemoryRepository = {
   getInteractionsByIds(namespaceId: string, ids: string[]): Promise<RecentInteraction[]>;
   getFactsByIds(namespaceId: string, ids: string[]): Promise<RecentFact[]>;
   getSummariesByIds(namespaceId: string, ids: string[]): Promise<RecentSummary[]>;
+  /** Fetch one fact with its full SPO fields, or null when missing. */
+  getFactById(namespaceId: string, id: string): Promise<ListedFact | null>;
   countEmbeddingStatuses(namespaceId: string): Promise<PendingEmbeddingCounts>;
 
   listFacts(input: {

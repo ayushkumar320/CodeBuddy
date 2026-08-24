@@ -199,8 +199,14 @@ export class InMemoryMemoryRepository implements MemoryRepository {
     const claimed: EmbeddingJob[] = [];
     for (const row of this.embeddings.values()) {
       if (claimed.length >= limit) break;
-      if (row.status !== "pending") continue;
-      if (row.claimedAt && now - row.claimedAt < 1_000) continue;
+      // A claim is a 1s in-process lease; expired leases are re-claimable so a
+      // crashed processor's work is not stuck.
+      if (row.status === "processing") {
+        if (row.claimedAt && now - row.claimedAt < 1_000) continue;
+      } else if (row.status !== "pending") {
+        continue;
+      }
+      row.status = "processing";
       row.claimedAt = now;
       claimed.push({
         id: row.id,
@@ -225,13 +231,32 @@ export class InMemoryMemoryRepository implements MemoryRepository {
     row.claimedAt = null;
   }
 
-  async markEmbeddingFailed(id: string, error: string, attempts: number): Promise<void> {
+  /**
+   * Record a failure. Below `maxAttempts`, the row returns to 'processing'
+   * with its claimedAt timestamp acting as an exponential backoff timer
+   * (2s · 2^(attempts-1), capped at 60s); the claim loop skips rows inside
+   * their backoff window. At `maxAttempts` the job is parked as 'failed'.
+   */
+  async markEmbeddingFailed(
+    id: string,
+    error: string,
+    attempts: number,
+    options?: { maxAttempts?: number },
+  ): Promise<void> {
     const row = this.embeddings.get(id);
     if (!row) return;
+    const maxAttempts = options?.maxAttempts ?? 5;
     row.attempts = attempts;
     row.lastError = error;
-    row.claimedAt = null;
-    row.status = attempts >= 5 ? "failed" : "pending";
+    if (attempts >= maxAttempts) {
+      row.status = "failed";
+      row.claimedAt = null;
+      return;
+    }
+    // Keep status 'processing' with claimedAt in the past by the backoff so
+    // the next claim skips it until the backoff elapses (lease re-claim).
+    const backoffMs = Math.min(60_000, 2 ** Math.max(0, attempts - 1) * 1000);
+    row.claimedAt = Date.now() - 1_000 + backoffMs;
   }
 
   async getEmbeddingStatus(id: string): Promise<EmbeddingStatusSnapshot | null> {
@@ -300,7 +325,10 @@ export class InMemoryMemoryRepository implements MemoryRepository {
   }
 
   async recordModelCall(entry: ModelCallEntry): Promise<void> {
-    this.modelCalls.push(entry);
+    // Stamp wall-clock arrival so usage windows (60s/hour/24h) are real time
+    // buckets instead of the latency-derived nonsense that counted every
+    // fast call ever made.
+    this.modelCalls.push({ ...entry, metadata: { ...entry.metadata, recordedAt: Date.now() } });
   }
 
   async recordAudit(entry: AuditEntry): Promise<void> {
@@ -411,17 +439,38 @@ export class InMemoryMemoryRepository implements MemoryRepository {
       }));
   }
 
+  async getFactById(namespaceId: string, id: string): Promise<ListedFact | null> {
+    const row = this.facts.get(id);
+    if (!row || row.namespaceId !== namespaceId) return null;
+    return {
+      id: row.id,
+      subject: row.subject,
+      predicate: row.predicate,
+      object: row.object,
+      content: row.content,
+      // The in-memory store does not model per-fact confidence; mirror
+      // getFactsByIds and report the neutral default.
+      confidence: 1,
+      sourceInteractionId: row.sourceInteractionId ?? null,
+      sourceDeleted: row.sourceDeleted,
+      createdByAgent: row.createdByAgent ?? null,
+      createdAt: new Date(row.createdAt),
+    };
+  }
+
   async countEmbeddingStatuses(namespaceId: string): Promise<PendingEmbeddingCounts> {
     let pending = 0;
+    let processing = 0;
     let failed = 0;
     let ready = 0;
     for (const row of this.embeddings.values()) {
       if (row.namespaceId !== namespaceId) continue;
       if (row.status === "pending") pending += 1;
+      else if (row.status === "processing") processing += 1;
       else if (row.status === "failed") failed += 1;
       else if (row.status === "ready") ready += 1;
     }
-    return { pending, failed, ready };
+    return { pending, processing, failed, ready };
   }
 
   async listFacts(input: {
@@ -511,11 +560,12 @@ export class InMemoryMemoryRepository implements MemoryRepository {
   }
 
   async getStats(namespaceId?: string): Promise<MemoryStats> {
-    const embeddings = { pending: 0, failed: 0, ready: 0 };
+    const embeddings = { pending: 0, processing: 0, failed: 0, ready: 0 };
     const inScope = (ns: string) => !namespaceId || ns === namespaceId;
     for (const row of this.embeddings.values()) {
       if (!inScope(row.namespaceId)) continue;
       if (row.status === "pending") embeddings.pending += 1;
+      if (row.status === "processing") embeddings.processing += 1;
       if (row.status === "failed") embeddings.failed += 1;
       if (row.status === "ready") embeddings.ready += 1;
     }
@@ -532,11 +582,17 @@ export class InMemoryMemoryRepository implements MemoryRepository {
         .length,
       embeddings,
       modelCalls: {
-        last60s: calls.filter((entry) => now - Number(entry.metadata.latencyMs ?? 0) <= 60_000)
+        last60s: calls.filter((entry) => now - Number(entry.metadata.recordedAt ?? 0) <= 60_000)
           .length,
-        lastHour: calls.length,
-        last24h: calls.length,
-        gatedFailures: calls.filter((entry) => entry.metadata.status === "gated").length,
+        lastHour: calls.filter((entry) => now - Number(entry.metadata.recordedAt ?? 0) <= 3_600_000)
+          .length,
+        last24h: calls.filter((entry) => now - Number(entry.metadata.recordedAt ?? 0) <= 86_400_000)
+          .length,
+        gatedFailures: calls.filter(
+          (entry) =>
+            entry.metadata.status === "gated" &&
+            now - Number(entry.metadata.recordedAt ?? 0) <= 86_400_000,
+        ).length,
       },
     };
   }
@@ -552,18 +608,31 @@ export class InMemoryMemoryRepository implements MemoryRepository {
       if (row.createdAt < before) {
         this.interactions.delete(id);
         interactionsDeleted += 1;
+        // Keep embedding rows in parity with the Postgres implementation.
+        for (const [embId, emb] of this.embeddings) {
+          if (emb.ownerType === "interaction" && emb.ownerId === id) this.embeddings.delete(embId);
+        }
       }
     }
     for (const [id, row] of this.facts) {
       if (row.createdAt < before) {
         this.facts.delete(id);
         factsDeleted += 1;
+        for (const [embId, emb] of this.embeddings) {
+          if (emb.ownerType === "fact" && emb.ownerId === id) this.embeddings.delete(embId);
+        }
+        for (const share of this.shares.values()) {
+          if (share.mode === "reference" && share.sourceFactId === id) share.tombstoned = true;
+        }
       }
     }
     for (const [id, row] of this.summaries) {
       if (row.createdAt < before) {
         this.summaries.delete(id);
         summariesDeleted += 1;
+        for (const [embId, emb] of this.embeddings) {
+          if (emb.ownerType === "summary" && emb.ownerId === id) this.embeddings.delete(embId);
+        }
       }
     }
     return { interactions: interactionsDeleted, facts: factsDeleted, summaries: summariesDeleted };

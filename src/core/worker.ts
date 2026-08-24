@@ -18,6 +18,8 @@ export type WorkerState = "idle" | "running" | "draining" | "stopped";
 const DEFAULT_POLL_MS = 250;
 const DEFAULT_BATCH_SIZE = 8;
 const DEFAULT_MAX_ATTEMPTS = 5;
+/** After a failed poll, wait this long before retrying so a DB outage doesn't spin. */
+const ERROR_BACKOFF_MS = 2_000;
 
 export class EmbeddingWorker {
   private readonly repo: MemoryRepository;
@@ -47,13 +49,16 @@ export class EmbeddingWorker {
   }
 
   start(): void {
-    if (this.state === "running") return;
-    if (this.state === "draining" || this.state === "stopped") {
-      this.state = "running";
-    } else {
-      this.state = "running";
-    }
-    this.loopPromise = this.loop();
+    // Never run two loops at once: a start() during 'draining' must not
+    // overwrite loopPromise while the old loop is still finishing.
+    if (this.loopPromise !== null) return;
+    this.state = "running";
+    this.loopPromise = this.loop().finally(() => {
+      this.loopPromise = null;
+    });
+    // A rejected loop must never become an unhandled rejection (Node 20 kills
+    // the process); failures are contained per-iteration below.
+    this.loopPromise.catch(() => {});
   }
 
   notify(): void {
@@ -64,8 +69,13 @@ export class EmbeddingWorker {
     }
   }
 
+  /**
+   * Resolve once the worker reaches an empty poll (no in-flight jobs and
+   * nothing left to claim). Retained for API compatibility: with
+   * repository-side leases and backoff there is no unbounded claim window to
+   * wait out anymore.
+   */
   async drain(): Promise<void> {
-    if (this.state === "idle" || this.state === "stopped") return;
     await new Promise<void>((resolve) => {
       this.idleResolvers.push(resolve);
       this.notify();
@@ -89,9 +99,24 @@ export class EmbeddingWorker {
     await this.stop();
   }
 
+  getInFlight(): number {
+    return this.inFlight;
+  }
+
   private async loop(): Promise<void> {
     while (this.state === "running" || this.state === "draining") {
-      const jobs = await this.repo.claimPendingEmbeddings(this.batchSize);
+      let jobs: EmbeddingJob[];
+      try {
+        jobs = await this.repo.claimPendingEmbeddings(this.batchSize);
+      } catch (error) {
+        // A transient DB error must never escape the loop — an escaping
+        // rejection used to crash the whole MCP server process.
+        console.error(
+          `[worker] claimPendingEmbeddings failed: ${error instanceof Error ? error.message : String(error)}; retrying`,
+        );
+        if (this.state === "running") await this.sleep(ERROR_BACKOFF_MS);
+        continue;
+      }
       if (jobs.length === 0) {
         this.flushIdleResolvers();
         if (this.state === "draining") {
@@ -145,14 +170,16 @@ export class EmbeddingWorker {
     } catch (error) {
       const attempts = job.attempts + 1;
       const message = error instanceof Error ? error.message : String(error);
-      await this.repo.markEmbeddingFailed(job.id, message, attempts);
+      await this.repo.markEmbeddingFailed(job.id, message, attempts, {
+        maxAttempts: this.maxAttempts,
+      });
       await this.emitDiagnostic({
         id: generateEntityId("mc"),
         namespaceId: job.namespaceId,
         metadata: {
           model: job.embeddingModel,
           type: "embedding",
-          status: attempts >= this.maxAttempts ? "failed" : "failed",
+          status: attempts >= this.maxAttempts ? "failed" : "fallback",
           latencyMs: 0,
           error: message,
           retries: attempts,
@@ -163,23 +190,22 @@ export class EmbeddingWorker {
     }
   }
 
-  private async emitDiagnostic(entry: ModelCallEntry): Promise<void> {
-    try {
-      await this.repo.recordModelCall(entry);
-    } catch {
-      /* model_calls failure must not crash the worker */
-    }
-    if (this.onDiagnostic) {
-      await this.onDiagnostic(entry);
-    }
+  private emitDiagnostic(entry: ModelCallEntry): Promise<void> {
+    const sink = this.onDiagnostic;
+    if (!sink) return Promise.resolve();
+    return Promise.resolve()
+      .then(() => sink(entry))
+      .catch(() => {
+        /* diagnostic sink failure must not crash the worker */
+      });
   }
 
-  private sleep(): Promise<void> {
+  private sleep(ms?: number): Promise<void> {
     return new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         this.wake = null;
         resolve();
-      }, this.pollIntervalMs);
+      }, ms ?? this.pollIntervalMs);
       this.wake = () => {
         clearTimeout(timer);
         resolve();

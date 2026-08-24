@@ -30,7 +30,12 @@ export const embeddingOwnerTypeEnum = pgEnum("embedding_owner_type", [
   "fact",
   "summary",
 ]);
-export const embeddingStatusEnum = pgEnum("embedding_status", ["pending", "ready", "failed"]);
+export const embeddingStatusEnum = pgEnum("embedding_status", [
+  "pending",
+  "processing",
+  "ready",
+  "failed",
+]);
 export const shareModeEnum = pgEnum("share_mode", ["reference", "snapshot"]);
 export const modelCallTypeEnum = pgEnum("model_call_type", ["embedding", "llm"]);
 export const modelCallStatusEnum = pgEnum("model_call_status", [
@@ -162,6 +167,8 @@ export const embeddings = pgTable(
     status: embeddingStatusEnum("status").notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
     lastError: text("last_error"),
+    /** Lease deadline while status='processing'; null otherwise. */
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
     createdAt,
     updatedAt,
   },

@@ -72,6 +72,6 @@ export type ForgetResult = {
   entityType: "interaction" | "fact" | "unknown";
 };
 
-export type EmbeddingJobStatus = "pending" | "ready" | "failed";
+export type EmbeddingJobStatus = "pending" | "processing" | "ready" | "failed";
 
 export type AuditAction = "remember" | "remember_batch" | "share" | "forget" | "config";

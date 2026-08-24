@@ -241,6 +241,16 @@ export class PostgresMemoryRepository implements MemoryRepository {
     });
   }
 
+  /**
+   * Claim up to `limit` embeddable jobs.
+   *
+   * A claim is a LEASE, not just a row lock: claimed rows move to
+   * status='processing' with a `lease_until` deadline, so protection survives
+   * the committing transaction. Concurrent workers (e.g. Claude Desktop and
+   * Codex both running `codebuddy serve`) therefore never process the same
+   * item twice. Expired leases are re-claimable, so a crashed worker's work is
+   * picked up again instead of being stuck forever.
+   */
   async claimPendingEmbeddings(limit: number): Promise<EmbeddingJob[]> {
     const rows = await this.client.sql<
       {
@@ -256,12 +266,15 @@ export class PostgresMemoryRepository implements MemoryRepository {
       with claimed as (
         select id from embeddings
         where status = 'pending'
+           or (status = 'processing' and (lease_until is null or lease_until < now()))
         order by created_at asc
         for update skip locked
         limit ${limit}
       )
       update embeddings e
-      set updated_at = now()
+      set status = 'processing',
+          lease_until = now() + interval '120 seconds',
+          updated_at = now()
       from claimed
       where e.id = claimed.id
       returning
@@ -297,16 +310,32 @@ export class PostgresMemoryRepository implements MemoryRepository {
         vector: literal,
         embeddingModel: model,
         lastError: null,
+        leaseUntil: null,
         updatedAt: sql`now()`,
       })
       .where(eq(embeddings.id, id));
   }
 
-  async markEmbeddingFailed(id: string, error: string, attempts: number): Promise<void> {
+  /**
+   * Record a failure. Below `maxAttempts`, the row goes back to
+   * 'processing' with an exponentially growing lease (2s · 2^(attempts-1),
+   * capped at 60s) that acts as a retry backoff timer — a rate-limited
+   * endpoint is no longer hammered every poll tick. At `maxAttempts` the job
+   * is parked as 'failed'.
+   */
+  async markEmbeddingFailed(
+    id: string,
+    error: string,
+    attempts: number,
+    options?: { maxAttempts?: number },
+  ): Promise<void> {
+    const maxAttempts = options?.maxAttempts ?? 5;
+    const backoffSeconds = Math.min(60, 2 ** Math.max(0, attempts - 1));
     await this.db
       .update(embeddings)
       .set({
-        status: sql`case when ${attempts} >= 5 then 'failed'::embedding_status else 'pending'::embedding_status end`,
+        status: sql`case when ${attempts} >= ${maxAttempts} then 'failed'::embedding_status else 'processing'::embedding_status end`,
+        leaseUntil: sql`case when ${attempts} >= ${maxAttempts} then null else now() + (${backoffSeconds} || ' seconds')::interval end`,
         attempts,
         lastError: error,
         updatedAt: sql`now()`,
@@ -577,6 +606,28 @@ export class PostgresMemoryRepository implements MemoryRepository {
     return rows;
   }
 
+  async getFactById(namespaceId: string, id: string): Promise<ListedFact | null> {
+    const rows = await this.db
+      .select({
+        id: facts.id,
+        subject: facts.subject,
+        predicate: facts.predicate,
+        object: facts.object,
+        content: facts.content,
+        confidence: facts.confidence,
+        sourceInteractionId: facts.sourceInteractionId,
+        sourceDeleted: facts.sourceDeleted,
+        createdByAgent: facts.createdByAgent,
+        createdAt: facts.createdAt,
+      })
+      .from(facts)
+      .where(and(eq(facts.namespaceId, namespaceId), eq(facts.id, id)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return { ...row, confidence: Number(row.confidence ?? 1) };
+  }
+
   async countEmbeddingStatuses(namespaceId: string): Promise<PendingEmbeddingCounts> {
     const rows = await this.client.sql<{ status: string; count: string }[]>`
       select status::text as status, count(*)::text as count
@@ -585,15 +636,17 @@ export class PostgresMemoryRepository implements MemoryRepository {
       group by status
     `;
     let pending = 0;
+    let processing = 0;
     let failed = 0;
     let ready = 0;
     for (const row of rows) {
       const value = Number(row.count);
       if (row.status === "pending") pending = value;
+      else if (row.status === "processing") processing = value;
       else if (row.status === "failed") failed = value;
       else if (row.status === "ready") ready = value;
     }
-    return { pending, failed, ready };
+    return { pending, processing, failed, ready };
   }
 
   async listFacts(input: {
@@ -761,9 +814,10 @@ export class PostgresMemoryRepository implements MemoryRepository {
             count(*) filter (where status = 'gated' and created_at >= now() - interval '24 hours')::text as gated_failures
           from model_calls
         `;
-    const embeddingsCount = { pending: 0, failed: 0, ready: 0 };
+    const embeddingsCount = { pending: 0, processing: 0, failed: 0, ready: 0 };
     for (const row of embeddingRows) {
       if (row.status === "pending") embeddingsCount.pending = Number(row.count);
+      if (row.status === "processing") embeddingsCount.processing = Number(row.count);
       if (row.status === "failed") embeddingsCount.failed = Number(row.count);
       if (row.status === "ready") embeddingsCount.ready = Number(row.count);
     }
@@ -792,18 +846,66 @@ export class PostgresMemoryRepository implements MemoryRepository {
     cutoff: Date,
   ): Promise<{ interactions: number; facts: number; summaries: number }> {
     return this.db.transaction(async (tx) => {
+      // Embeddings have no FK on owner_id, so pruned owners must have their
+      // embedding rows removed explicitly — otherwise orphan vectors bloat
+      // the HNSW index forever and consume recall limit slots.
       const deletedInteractions = await tx
         .delete(interactions)
         .where(lt(interactions.createdAt, cutoff))
         .returning({ id: interactions.id });
+      if (deletedInteractions.length > 0) {
+        await tx.delete(embeddings).where(
+          and(
+            eq(embeddings.ownerType, "interaction"),
+            inArray(
+              embeddings.ownerId,
+              deletedInteractions.map((row) => row.id),
+            ),
+          ),
+        );
+      }
       const deletedFacts = await tx
         .delete(facts)
         .where(lt(facts.createdAt, cutoff))
         .returning({ id: facts.id });
+      if (deletedFacts.length > 0) {
+        await tx.delete(embeddings).where(
+          and(
+            eq(embeddings.ownerType, "fact"),
+            inArray(
+              embeddings.ownerId,
+              deletedFacts.map((row) => row.id),
+            ),
+          ),
+        );
+        await tx
+          .update(shares)
+          .set({ tombstoned: true })
+          .where(
+            and(
+              eq(shares.mode, "reference"),
+              inArray(
+                shares.sourceFactId,
+                deletedFacts.map((row) => row.id),
+              ),
+            ),
+          );
+      }
       const deletedSummaries = await tx
         .delete(sessionSummaries)
         .where(lt(sessionSummaries.createdAt, cutoff))
         .returning({ id: sessionSummaries.id });
+      if (deletedSummaries.length > 0) {
+        await tx.delete(embeddings).where(
+          and(
+            eq(embeddings.ownerType, "summary"),
+            inArray(
+              embeddings.ownerId,
+              deletedSummaries.map((row) => row.id),
+            ),
+          ),
+        );
+      }
       return {
         interactions: deletedInteractions.length,
         facts: deletedFacts.length,
