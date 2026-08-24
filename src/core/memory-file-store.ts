@@ -191,7 +191,15 @@ export class MemoryFileStore {
       const facts: FactFile[] = [];
       for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
         if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-        facts.push(await this.readFact(join(this.factsDirectory, entry.name)));
+        // Only managed fact files are parsed. Hand-written markdown is ignored,
+        // and a schema-invalid/corrupt fact is skipped (not thrown) so one bad
+        // file can't break recall or memory capture for the whole project.
+        if (!/^fact_[a-z0-9]+\.md$/.test(entry.name)) continue;
+        try {
+          facts.push(await this.readFact(join(this.factsDirectory, entry.name)));
+        } catch {
+          // Skip unparseable facts; they remain on disk for manual repair.
+        }
       }
       return facts;
     } catch (error) {
@@ -258,7 +266,13 @@ export class MemoryFileStore {
       const summaries: SummaryFile[] = [];
       for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
         if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-        summaries.push(await this.readSummary(join(this.summariesDirectory, entry.name)));
+        // Managed files only; skip corrupt entries instead of throwing.
+        if (!/^sum_[a-z0-9]+\.md$/.test(entry.name)) continue;
+        try {
+          summaries.push(await this.readSummary(join(this.summariesDirectory, entry.name)));
+        } catch {
+          // Skip unparseable summaries.
+        }
       }
       return summaries;
     } catch (error) {

@@ -115,7 +115,16 @@ export class ReviewStore {
       const items: ReviewItem[] = [];
       for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
         if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-        items.push(await this.read(entry.name.replace(/\.md$/, "")));
+        // Only managed review files are queue items. A hand-written README.md
+        // (or any non-rev_ markdown) must be ignored, not thrown on — one
+        // stray file used to brick every future capture turn.
+        if (!/^rev_[a-z0-9]+\.md$/.test(entry.name)) continue;
+        try {
+          items.push(await this.read(entry.name.replace(/\.md$/, "")));
+        } catch {
+          // A single corrupt item is skipped rather than poisoning the whole
+          // queue; it stays on disk for manual inspection.
+        }
       }
       return items;
     } catch (error) {
