@@ -1,9 +1,10 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildEntry,
+  claudeDesktopConfigPath,
   installClaudeEntry,
   listClaudeEntries,
   readClaudeConfig,
@@ -79,13 +80,10 @@ describe("install / list / remove", () => {
   });
 
   it("merges into an existing config without clobbering other servers", async () => {
-    const path = join(
-      dir,
-      "Library",
-      "Application Support",
-      "Claude",
-      "claude_desktop_config.json",
-    );
+    // Resolve via the same helper the install path uses so the test is
+    // correct on every platform (macOS: Library/Application Support/Claude,
+    // Linux: .config/Claude, Windows: %APPDATA%\Claude).
+    const path = claudeDesktopConfigPath(dir);
     await writeClaudeConfig(path, {
       mcpServers: {
         "some-other": { command: "node", args: ["/x/y.js"] },
@@ -134,15 +132,8 @@ describe("install / list / remove", () => {
   });
 
   it("refuses to parse a malformed config", async () => {
-    const path = join(
-      dir,
-      "Library",
-      "Application Support",
-      "Claude",
-      "claude_desktop_config.json",
-    );
-    const { mkdir } = await import("node:fs/promises");
-    await mkdir(join(dir, "Library", "Application Support", "Claude"), { recursive: true });
+    const path = claudeDesktopConfigPath(dir);
+    await mkdir(join(path, ".."), { recursive: true });
     await writeFile(path, "{ not valid json", "utf8");
     await expect(readClaudeConfig(path)).rejects.toThrow();
   });
