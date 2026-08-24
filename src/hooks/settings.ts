@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { writeAtomic } from "../core/markdown-store-fs.js";
 
 /**
  * Installs CodeBuddy's lifecycle hooks into a client's settings JSON. Unlike the
@@ -44,15 +45,25 @@ export function upsertHooks(settings: HookSettings): { settings: HookSettings; c
 
   for (const def of HOOK_DEFS) {
     const groups = [...(hooks[def.event] ?? [])];
-    const already = groups.some((group) =>
+    const existingIndex = groups.findIndex((group) =>
       group.hooks?.some((hook) => hook.command === def.command),
     );
-    if (!already) {
+    if (existingIndex === -1) {
       groups.push({
         ...(def.matcher ? { matcher: def.matcher } : {}),
         hooks: [{ type: "command", command: def.command }],
       });
       changed = true;
+    } else {
+      // The command exists, but possibly under a stale matcher (e.g. an older
+      // install with matcher:"Edit" before MultiEdit coverage). Reconcile the
+      // group's matcher so coverage matches the current contract.
+      const existing = groups[existingIndex];
+      if (existing && (def.matcher ?? undefined) !== (existing.matcher ?? undefined)) {
+        const { matcher: _oldMatcher, ...rest } = existing;
+        groups[existingIndex] = def.matcher ? { ...rest, matcher: def.matcher } : rest;
+        changed = true;
+      }
     }
     hooks[def.event] = groups;
   }
@@ -68,13 +79,20 @@ export function removeHooks(settings: HookSettings): { settings: HookSettings; c
   let changed = false;
 
   for (const event of Object.keys(hooks)) {
-    const kept = (hooks[event] ?? []).filter((group) => {
-      const isOurs = group.hooks?.some((hook) => hook.command?.startsWith(HOOK_COMMAND_PREFIX));
-      if (isOurs) changed = true;
-      return !isOurs;
-    });
-    if (kept.length === 0) delete hooks[event];
-    else hooks[event] = kept;
+    const keptGroups: HookGroup[] = [];
+    for (const group of hooks[event] ?? []) {
+      // Filter INSIDE groups: a user group mixing our hook with their own
+      // commands must keep theirs. Dropping whole groups used to silently
+      // delete user hooks that happened to share a group with ours.
+      const keptHooks = (group.hooks ?? []).filter(
+        (hook) => !hook.command?.startsWith(HOOK_COMMAND_PREFIX),
+      );
+      if (keptHooks.length !== (group.hooks ?? []).length) changed = true;
+      if (keptHooks.length === 0) continue; // group was entirely ours
+      keptGroups.push({ ...group, hooks: keptHooks });
+    }
+    if (keptGroups.length === 0) delete hooks[event];
+    else hooks[event] = keptGroups;
   }
 
   return { settings: next, changed };
@@ -98,5 +116,6 @@ export async function readSettings(path: string): Promise<HookSettings> {
 
 export async function writeSettings(path: string, settings: HookSettings): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+  // Atomic so a crash mid-write can never truncate the user's settings.json.
+  await writeAtomic(path, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o644 });
 }

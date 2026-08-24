@@ -30,6 +30,25 @@ describe("upsertHooks", () => {
     expect(groups.some((g) => g.hooks[0]?.command === "my-own-thing")).toBe(true);
     expect(groups.some((g) => g.hooks[0]?.command === "codebuddy hooks context")).toBe(true);
   });
+  it("reconciles a stale matcher on an existing install", () => {
+    // Simulate an older install whose PostToolUse group lacks MultiEdit coverage.
+    const existing: HookSettings = {
+      hooks: {
+        PostToolUse: [
+          { matcher: "Edit", hooks: [{ type: "command", command: "codebuddy hooks stage" }] },
+        ],
+      },
+    };
+    const { settings, changed } = upsertHooks(existing);
+    expect(changed).toBe(true);
+    const group = settings.hooks?.PostToolUse?.[0];
+    expect(group?.matcher).toBe("Edit|Write|MultiEdit");
+    // Still exactly one codebuddy stage hook — no duplicate appended.
+    const commands = (settings.hooks?.PostToolUse ?? []).flatMap((g) =>
+      g.hooks.map((h) => h.command),
+    );
+    expect(commands.filter((c) => c === "codebuddy hooks stage")).toHaveLength(1);
+  });
 });
 
 describe("removeHooks", () => {
@@ -45,6 +64,29 @@ describe("removeHooks", () => {
     expect(settings.hooks?.UserPromptSubmit).toHaveLength(1);
     expect(settings.hooks?.UserPromptSubmit?.[0]?.hooks[0]?.command).toBe("keep-me");
     expect(settings.hooks?.Stop).toBeUndefined();
+  });
+
+  it("keeps user hooks that share a group with a CodeBuddy hook", () => {
+    const mixed: HookSettings = {
+      hooks: {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              { type: "command", command: "codebuddy hooks context" },
+              { type: "command", command: "my-linter" },
+            ],
+          },
+        ],
+      },
+    };
+    const { settings, changed } = removeHooks(mixed);
+    expect(changed).toBe(true);
+    expect(hooksInstalled(settings)).toBe(false);
+    // The user's own command in the SAME group must survive.
+    expect(settings.hooks?.UserPromptSubmit).toHaveLength(1);
+    expect(settings.hooks?.UserPromptSubmit?.[0]?.hooks).toEqual([
+      { type: "command", command: "my-linter" },
+    ]);
   });
 
   it("is a no-op when nothing is installed", () => {
