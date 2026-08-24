@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
 import { access, chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { z } from "zod";
+import { writeAtomic } from "./markdown-store-fs.js";
 import type { CodeBuddyConfig } from "./types.js";
 
 export const CONFIG_DIR = ".codebuddy";
@@ -132,7 +133,9 @@ export async function initConfigFile(
   } catch {
     const template: CodeBuddyFileConfig = {
       postgresUrl: process.env.DATABASE_URL ?? "postgres://localhost:5432/codebuddy",
-      namespace: "default",
+      // Default to the folder name (sanitized) so a fresh scaffold agrees with
+      // doctor's expected default instead of warning immediately after init.
+      namespace: defaultNamespaceForCwd(cwd),
       provider: { type: "huggingface" },
       tokenBudget: 4000,
     };
@@ -153,6 +156,29 @@ export async function readConfigFile(cwd = process.cwd()): Promise<CodeBuddyFile
   }
 }
 
+/**
+ * The ONE namespace-resolution rule, shared by the DB/MCP runtime, every
+ * file-based CLI command, and doctor. Precedence:
+ *   1. CODEBUDDY_NAMESPACE env
+ *   2. `.codebuddy/config.json` `namespace`
+ *   3. the current folder name (sanitized) — matching what doctor reports as
+ *      the expected default.
+ */
+export function sanitizeNamespace(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_.:-]/g, "-").slice(0, 128);
+}
+
+/** Folder-name fallback used when neither env nor config specify a namespace. */
+export function defaultNamespaceForCwd(cwd = process.cwd()): string {
+  return sanitizeNamespace(basename(cwd)) || "default";
+}
+
+export async function resolveNamespaceFrom(cwd = process.cwd()): Promise<string> {
+  if (process.env.CODEBUDDY_NAMESPACE) return process.env.CODEBUDDY_NAMESPACE;
+  const file = await readConfigFile(cwd);
+  return file.namespace ?? defaultNamespaceForCwd(cwd);
+}
+
 export async function loadRuntimeConfig(cwd = process.cwd()): Promise<CodeBuddyConfig> {
   const file = await readConfigFile(cwd);
   const postgresUrl = process.env.DATABASE_URL ?? file.postgresUrl;
@@ -162,7 +188,7 @@ export async function loadRuntimeConfig(cwd = process.cwd()): Promise<CodeBuddyC
   const hfToken = process.env.HF_TOKEN ?? file.provider?.apiKey;
   return {
     postgresUrl,
-    namespace: process.env.CODEBUDDY_NAMESPACE ?? file.namespace ?? "default",
+    namespace: process.env.CODEBUDDY_NAMESPACE ?? file.namespace ?? defaultNamespaceForCwd(cwd),
     projectRoot: process.env.CODEBUDDY_PROJECT_ROOT ?? cwd,
     provider: {
       type: "huggingface",
@@ -283,14 +309,23 @@ export async function setPlanPolicy(policy: PlanPolicy, cwd = process.cwd()): Pr
   const path = configPath(cwd);
   const raw = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
   raw.plan = { ...(raw.plan as Record<string, unknown> | undefined), policy };
-  await writeFile(path, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o600 });
-  await chmod(path, 0o600);
+  // Atomic rewrite: this file holds the postgresUrl and provider apiKey.
+  await writeAtomic(path, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o600 });
 }
 
 export function redactSecrets(value: unknown): unknown {
   if (typeof value === "string") {
+    let redacted = value;
+    // HF token literal anywhere in a string.
     const hf = process.env.HF_TOKEN;
-    return hf ? value.split(hf).join("[REDACTED]") : value;
+    if (hf) redacted = redacted.split(hf).join("[REDACTED]");
+    // Credentials embedded in connection URLs (postgres://user:pass@host…).
+    // The password — not the username — is the secret.
+    redacted = redacted.replace(
+      /(\b[a-z][a-z0-9+.-]*:\/\/[^:/\s@]+:)[^/\s@]+(@)/gi,
+      "$1[REDACTED]$2",
+    );
+    return redacted;
   }
   if (Array.isArray(value)) return value.map(redactSecrets);
   if (!value || typeof value !== "object") return value;

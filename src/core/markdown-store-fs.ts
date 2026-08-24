@@ -57,10 +57,17 @@ export async function assertNoSymlinkBetween(root: string, target: string): Prom
  * Write `document` to `path` atomically: write to a unique temp file with
  * an exclusive (`wx`) create, fsync, then rename into place. A crash mid-
  * write leaves either the old file or nothing — never a partial file.
+ *
+ * `mode` sets permissions on NEWLY created files (an existing file keeps its
+ * mode, matching rename semantics). Secrets-bearing configs should use 0o600.
  */
-export async function writeAtomic(path: string, document: string): Promise<void> {
+export async function writeAtomic(
+  path: string,
+  document: string,
+  options?: { mode?: number },
+): Promise<void> {
   const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-  const handle = await open(temporaryPath, "wx", 0o600);
+  const handle = await open(temporaryPath, "wx", options?.mode ?? 0o600);
   try {
     await handle.writeFile(document, "utf8");
     await handle.sync();

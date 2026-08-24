@@ -1,5 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { writeAtomic } from "../core/markdown-store-fs.js";
 import { defaultRulesFile, renderWorkflowTemplate, type WorkflowClient } from "./workflow.js";
 
 /**
@@ -42,7 +43,8 @@ export async function installWorkflowRules(options: InstallRulesOptions): Promis
   const { content, action } = upsertBlock(existing, block);
 
   if (action === "unchanged") return { path, client: options.client, action };
-  await writeFile(path, content, "utf8");
+  // Atomic: a crash mid-write must never truncate the user's CLAUDE.md/AGENTS.md.
+  await writeAtomic(path, content, { mode: 0o644 });
   return { path, client: options.client, action };
 }
 

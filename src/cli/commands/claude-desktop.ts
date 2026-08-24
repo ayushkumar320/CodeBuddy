@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeAtomic } from "../../core/markdown-store-fs.js";
 
 export type ClaudeDesktopEntry = {
   command: string;
@@ -36,7 +37,9 @@ export async function readClaudeConfig(path: string): Promise<ClaudeDesktopConfi
 
 export async function writeClaudeConfig(path: string, config: ClaudeDesktopConfig): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  // Atomic + 0600: this config carries env secrets (HF token, DATABASE_URL).
+  // A crash mid-write must never truncate the user's other MCP entries.
+  await writeAtomic(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
 }
 
 /**

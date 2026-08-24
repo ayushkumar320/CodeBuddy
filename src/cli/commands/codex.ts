@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { writeAtomic } from "../../core/markdown-store-fs.js";
 import { buildEntry, type ClaudeDesktopEntry } from "./claude-desktop.js";
 
 export type CodexConfigEntry = ClaudeDesktopEntry;
@@ -17,7 +18,8 @@ export async function readCodexConfig(path: string): Promise<string> {
 
 export async function writeCodexConfig(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, content, "utf8");
+  // Atomic + 0600: the TOML carries env secrets (HF token, DATABASE_URL).
+  await writeAtomic(path, content, { mode: 0o600 });
 }
 
 export type InstallCodexEntryOptions = {
