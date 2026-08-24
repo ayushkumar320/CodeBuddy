@@ -240,9 +240,11 @@ describe("remember", () => {
       }),
     });
     await sdk.remember({ content: "needs embedding" });
+    // The worker claims immediately (row moves to 'processing' under its
+    // lease); before any claim it must still be 'pending'.
     const embeddings = Array.from(repository.embeddings.values());
     expect(embeddings).toHaveLength(1);
-    expect(embeddings[0]?.status).toBe("pending");
+    expect(["pending", "processing"]).toContain(embeddings[0]?.status);
     release();
     await sdk.shutdown();
   });
@@ -292,7 +294,9 @@ describe("embedding worker", () => {
     }
     const emb = Array.from(repository.embeddings.values()).find((row) => row.ownerId === id);
     expect(emb).toBeTruthy();
-    expect(["failed", "pending"]).toContain(emb?.status);
+    // Either parked as terminal 'failed', or mid-backoff in 'processing'
+    // waiting out its retry timer.
+    expect(["failed", "processing"]).toContain(emb?.status);
     expect((emb?.attempts ?? 0) > 0).toBe(true);
     await sdk.shutdown();
   });
@@ -345,19 +349,44 @@ describe("share", () => {
     await sdk.shutdown();
   });
 
-  it("snapshot mode copies a fact into the target namespace", async () => {
+  it("snapshot mode copies a real fact's content into the target namespace", async () => {
     const { sdk, repository } = await buildSdk();
+    await sdk.remember({ type: "fact", content: "Deploy requires the staging DB up." });
+    const sourceNs = await repository.getNamespaceByName("research-agent");
+    expect(sourceNs).toBeTruthy();
+    const sourceFact = Array.from(repository.facts.values()).find(
+      (row) => row.namespaceId === sourceNs?.id,
+    );
+    if (!sourceFact) throw new Error("expected a seeded source fact");
     const before = repository.facts.size;
-    await sdk.share({
+    const result = await sdk.share({
       from: "research-agent",
       to: "ops-agent",
-      factIds: ["fact_abc"],
+      factIds: [sourceFact.id],
       mode: "snapshot",
     });
+    expect(result.shared).toBe(1);
     expect(repository.facts.size).toBe(before + 1);
     const share = Array.from(repository.shares.values())[0];
     expect(share?.mode).toBe("snapshot");
     expect(share?.snapshotFactId).toBeTruthy();
+    // The snapshot must carry the source knowledge, not a dangling pointer.
+    const snapshotFact = repository.facts.get(share?.snapshotFactId ?? "");
+    expect(snapshotFact?.content).toContain("Deploy requires the staging DB up.");
+    expect(snapshotFact?.content).not.toContain("__snapshot:");
+    await sdk.shutdown();
+  });
+
+  it("snapshot mode rejects fact ids that do not exist in the source namespace", async () => {
+    const { sdk } = await buildSdk();
+    await expect(
+      sdk.share({
+        from: "research-agent",
+        to: "ops-agent",
+        factIds: ["fact_abc"],
+        mode: "snapshot",
+      }),
+    ).rejects.toThrow(/not found/);
     await sdk.shutdown();
   });
 });

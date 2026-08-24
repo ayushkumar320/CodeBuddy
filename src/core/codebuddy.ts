@@ -226,16 +226,29 @@ export class CodeBuddy {
         };
         await this.repo.shareReference(write);
       } else {
+        // A snapshot must carry the source fact's actual knowledge. Fetch it
+        // first: a missing fact id is an error, not a silently dangling
+        // `__snapshot:` pointer.
+        const source = await this.repo.getFactById(fromNs.id, factId);
+        if (!source) {
+          throw new Error(
+            `share: fact ${factId} not found in namespace "${input.from}"; cannot snapshot.`,
+          );
+        }
+        const snapshotContent = [
+          `[shared from ${input.from}] ${source.subject} ${source.predicate} ${source.object}`,
+          source.content,
+        ].join("\n");
         const snapshotFactId = generateEntityId("fact");
         const snapshotEmbeddingId = generateEntityId("emb");
         const snapshotFact: FactInsert = {
           id: snapshotFactId,
           namespaceId: toNs.id,
-          content: `__snapshot:${factId}`,
-          contentHash: computeFactHash(toNs.name, `__snapshot:${factId}:${shareId}`),
-          subject: "__shared__",
+          content: snapshotContent,
+          contentHash: computeFactHash(toNs.name, snapshotContent),
+          subject: source.subject,
           predicate: "snapshot_of",
-          object: factId,
+          object: `${input.from}:${factId}`,
           ...(input.agentId !== undefined ? { createdByAgent: input.agentId } : {}),
         };
         const embedding: PendingEmbeddingInsert = {
