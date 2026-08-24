@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
-import { basename, relative } from "node:path";
+import { relative } from "node:path";
 import type { Command } from "commander";
 import pc from "picocolors";
 import {
   loadPlanPolicy,
   PLAN_POLICIES,
   type PlanPolicy,
-  readConfigFile,
+  resolveNamespaceFrom,
   setPlanPolicy,
 } from "../../core/config-file.js";
 import { PlanFileStore, type PlanSpec, type PlanStatus } from "../../core/plan-file-store.js";
@@ -17,11 +17,6 @@ import { PlanLifecycle } from "../../core/plan-lifecycle.js";
  * database connection — plans are file-based, so a developer can author
  * and inspect them with no Postgres running.
  */
-async function resolveNamespace(cwd = process.cwd()): Promise<string> {
-  if (process.env.CODEBUDDY_NAMESPACE) return process.env.CODEBUDDY_NAMESPACE;
-  const file = await readConfigFile(cwd);
-  return file.namespace ?? basename(cwd);
-}
 
 function makeLifecycle(cwd = process.cwd()): { store: PlanFileStore; lifecycle: PlanLifecycle } {
   const store = new PlanFileStore(cwd);
@@ -124,7 +119,7 @@ export function registerPlanCommands(
     .action(async (briefParts: string[], opts: { title?: string; edit?: boolean }) => {
       await runSafely(async () => {
         const { lifecycle } = makeLifecycle();
-        const namespace = await resolveNamespace();
+        const namespace = await resolveNamespaceFrom();
         const brief = briefParts.join(" ");
         const created = await lifecycle.create({
           namespace,
@@ -151,7 +146,7 @@ export function registerPlanCommands(
     .action(async (opts: { status?: string; all?: boolean }) => {
       await runSafely(async () => {
         const { store } = makeLifecycle();
-        const namespace = await resolveNamespace();
+        const namespace = await resolveNamespaceFrom();
         let plans = (await store.listPlans()).filter((p) => p.namespace === namespace);
         if (opts.status) plans = plans.filter((p) => p.status === opts.status);
         else if (!opts.all)

@@ -8,6 +8,7 @@ import { CodeBuddy } from "./codebuddy.js";
 import {
   checkConfigPermissions,
   checkProjectScaffold,
+  defaultNamespaceForCwd,
   loadRuntimeConfig,
   readConfigFile,
   redactSecrets,
@@ -67,8 +68,23 @@ export function encodeFactCursor(fact: { createdAt: Date; id: string }): string 
 }
 
 export function decodeFactCursor(cursor: string): { createdAt: Date; id: string } {
-  const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as [string, string];
-  return { createdAt: new Date(parsed[0]), id: parsed[1] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Invalid cursor: expected a base64url-encoded [createdAt, id] pair.");
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length !== 2 ||
+    typeof parsed[0] !== "string" ||
+    typeof parsed[1] !== "string" ||
+    Number.isNaN(Date.parse(parsed[0]))
+  ) {
+    throw new Error("Invalid cursor: expected a base64url-encoded [createdAt, id] pair.");
+  }
+  const [createdAt, id] = parsed as [string, string];
+  return { createdAt: new Date(createdAt), id };
 }
 
 export async function listFactsPage(
@@ -149,13 +165,8 @@ export async function runDoctor(
   const fileConfig = await readConfigFile();
   const scaffold = await checkProjectScaffold();
   const configPermissions = await checkConfigPermissions();
-  const expectedDefaultNamespace =
-    process
-      .cwd()
-      .split(/[/\\]/)
-      .at(-1)
-      ?.replace(/[^a-zA-Z0-9_.:-]/g, "-")
-      .slice(0, 128) || "default";
+  // Same helper the runtime and every CLI command use — one rule everywhere.
+  const expectedDefaultNamespace = defaultNamespaceForCwd();
   const runtimeNamespace =
     process.env.CODEBUDDY_NAMESPACE ?? fileConfig.namespace ?? options.config?.namespace ?? null;
   const namespaceReport: DoctorReport["namespace"] = {

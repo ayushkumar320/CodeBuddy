@@ -1,15 +1,8 @@
-import { basename } from "node:path";
 import type { Command } from "commander";
 import pc from "picocolors";
-import { readConfigFile } from "../../core/config-file.js";
+import { resolveNamespaceFrom } from "../../core/config-file.js";
 import { assessRisk } from "../../risk/service.js";
 import type { Assessment, Evidence } from "../../risk/types.js";
-
-async function resolveNamespace(cwd = process.cwd()): Promise<string> {
-  if (process.env.CODEBUDDY_NAMESPACE) return process.env.CODEBUDDY_NAMESPACE;
-  const file = await readConfigFile(cwd);
-  return file.namespace ?? basename(cwd);
-}
 
 export function registerRiskCommands(
   program: Command,
@@ -36,7 +29,7 @@ export function registerRiskCommands(
         explain?: boolean;
       }) => {
         await runSafely(async () => {
-          const namespace = await resolveNamespace();
+          const namespace = await resolveNamespaceFrom();
           const assessment = await assessRisk({
             namespace,
             ...(opts.plan ? { planId: opts.plan } : {}),

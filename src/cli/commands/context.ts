@@ -1,20 +1,14 @@
-import { basename } from "node:path";
 import type { Command } from "commander";
 import pc from "picocolors";
 import { buildBeforeEditContext, buildBootstrapContext } from "../../context/engine.js";
 import type { BeforeEditContext, BootstrapContext } from "../../context/types.js";
-import { readConfigFile } from "../../core/config-file.js";
+import { readConfigFile, resolveNamespaceFrom } from "../../core/config-file.js";
 
 /**
  * Context previews are file-based (plan store, risk service, architecture map,
  * Markdown memory) so they run without a database connection — the same
  * lightweight path the plan and risk commands use.
  */
-async function resolveNamespace(cwd = process.cwd()): Promise<string> {
-  if (process.env.CODEBUDDY_NAMESPACE) return process.env.CODEBUDDY_NAMESPACE;
-  const file = await readConfigFile(cwd);
-  return file.namespace ?? basename(cwd);
-}
 
 async function resolveTokenBudget(cwd = process.cwd()): Promise<number | undefined> {
   const file = await readConfigFile(cwd);
@@ -43,7 +37,7 @@ export function registerContextCommands(
     .action(async (opts: { json?: boolean }) => {
       await runSafely(async () => {
         const [namespace, tokenBudget] = await Promise.all([
-          resolveNamespace(),
+          resolveNamespaceFrom(),
           resolveTokenBudget(),
         ]);
         const result = await buildBootstrapContext({
@@ -113,7 +107,10 @@ async function runBeforeEdit(
   taskParts: string[],
   opts: { paths?: string; plan?: string; git?: boolean },
 ): Promise<BeforeEditContext> {
-  const [namespace, tokenBudget] = await Promise.all([resolveNamespace(), resolveTokenBudget()]);
+  const [namespace, tokenBudget] = await Promise.all([
+    resolveNamespaceFrom(),
+    resolveTokenBudget(),
+  ]);
   const task = taskParts.join(" ").trim();
   return buildBeforeEditContext({
     namespace,

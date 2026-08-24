@@ -1,7 +1,6 @@
-import { basename } from "node:path";
 import type { Command } from "commander";
 import pc from "picocolors";
-import { readConfigFile } from "../../core/config-file.js";
+import { resolveNamespaceFrom } from "../../core/config-file.js";
 import { generateSuggestions } from "../../suggest/engine.js";
 import type { Suggestion, SuggestionSeverity } from "../../suggest/types.js";
 
@@ -9,11 +8,6 @@ import type { Suggestion, SuggestionSeverity } from "../../suggest/types.js";
  * `codebuddy suggest` is read-only and file-based (risk, plan, map, memory),
  * so it runs without a database — the same lightweight path as risk/context.
  */
-async function resolveNamespace(cwd = process.cwd()): Promise<string> {
-  if (process.env.CODEBUDDY_NAMESPACE) return process.env.CODEBUDDY_NAMESPACE;
-  const file = await readConfigFile(cwd);
-  return file.namespace ?? basename(cwd);
-}
 
 function parsePaths(value: string): string[] {
   return value
@@ -43,7 +37,7 @@ export function registerSuggestCommand(
         json?: boolean;
       }) => {
         await runSafely(async () => {
-          const namespace = await resolveNamespace();
+          const namespace = await resolveNamespaceFrom();
           const result = await generateSuggestions({
             namespace,
             ...(opts.paths ? { paths: parsePaths(opts.paths) } : {}),
