@@ -629,7 +629,10 @@ async function loadProjectArchitectureMap(
   manifestPromise: Promise<IndexManifest>,
 ): Promise<ArchitectureMap> {
   const [config, manifest] = await Promise.all([readConfigFile(repositoryRoot), manifestPromise]);
-  if (config.graphify?.enabled && (await graphifyGraphExists(repositoryRoot))) {
+  if (
+    config.graphify?.enabled &&
+    (await graphifyGraphExists(repositoryRoot, config.graphify.graphPath))
+  ) {
     return loadGraphifyMap(
       join(repositoryRoot, config.graphify.graphPath ?? "graphify-out/graph.json"),
       repositoryRoot,

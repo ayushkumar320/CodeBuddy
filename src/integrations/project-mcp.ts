@@ -1,5 +1,5 @@
 import { access, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { writeAtomic } from "../core/markdown-store-fs.js";
 
 export type ProjectMcpServer = {
@@ -16,6 +16,7 @@ export type WriteProjectMcpConfigOptions = {
   repositoryRoot: string;
   namespace: string;
   graphify: boolean;
+  graphPath?: string;
 };
 
 /** Add CodeBuddy and, optionally, Graphify to the project's MCP config. */
@@ -36,7 +37,12 @@ export async function writeProjectMcpConfig(
   if (options.graphify) {
     current.mcpServers.graphify = {
       command: "python",
-      args: ["-m", "graphify.serve", "graphify-out/graph.json"],
+      args: [
+        "-m",
+        "graphify.serve",
+        resolve(options.repositoryRoot, options.graphPath ?? "graphify-out/graph.json"),
+      ],
+      env: { CODEBUDDY_PROJECT_ROOT: options.repositoryRoot },
     };
   } else if (current.mcpServers.graphify) {
     delete current.mcpServers.graphify;

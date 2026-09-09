@@ -133,9 +133,9 @@ receiving a CodeBuddy report on every pull request.
 
 On the first run, `codebuddy` also asks whether to enable Graphify:
 
-- **Yes:** it installs/detects Graphify, registers its local MCP server in the
-  project `.mcp.json`, enables Graphify architecture input for CodeBuddy, and
-  tells you to run `/graphify .` in your coding agent to build the graph.
+- **Yes:** it installs/detects Graphify, builds `graphify-out/graph.json`,
+  registers its local MCP server in the project `.mcp.json`, and enables
+  Graphify architecture input for CodeBuddy.
 - **No:** it registers only CodeBuddy. The MCP context workflow is unchanged;
   CodeBuddy uses its own local architecture index.
 
@@ -145,8 +145,17 @@ credentials in `.mcp.json`, and adds managed instructions to `CLAUDE.md` and
 added only when Graphify is enabled.
 
 Graphify runs locally. Its current installer is `uv tool install graphifyy`
-(with pipx/pip alternatives), and its assistant command produces
-`graphify-out/graph.json`, which CodeBuddy consumes automatically when enabled.
+(with pipx/pip alternatives). Setup generates `graphify-out/graph.json` using
+Graphify's code-only extractor before registering the MCP server. Regenerate it
+after repository changes with:
+
+```bash
+codebuddy graphify index
+```
+
+`codebuddy serve` also checks an enabled Graphify configuration and prepares a
+missing or invalid graph automatically. Graph output is staged and validated
+before replacement, so a valid existing graph is preserved if extraction fails.
 
 ### How CodeBuddy helps, in plain English
 

@@ -9,6 +9,7 @@ import { bootstrapDatabase } from "../db/bootstrap.js";
 import { createDatabaseClient } from "../db/client.js";
 import { runMigrations } from "../db/migrator.js";
 import { installGitHubWorkflow } from "../integrations/github.js";
+import { generateGraphifyGraph } from "../integrations/graphify.js";
 import { startMcpServer } from "../mcp/server.js";
 import { VERSION } from "../version.js";
 import { registerChangeCommand } from "./commands/change.js";
@@ -113,6 +114,25 @@ export function createCli(): Command {
           const workflow = await installGitHubWorkflow();
           console.log(`${workflow.created ? "installed" : "already present"} ${workflow.path}`);
         }
+      });
+    });
+
+  const graphify = program
+    .command("graphify")
+    .description("Build the local Graphify repository graph.");
+  graphify
+    .command("index")
+    .argument("[projectRoot]", "Project root (defaults to the current directory).")
+    .option("--graph <path>", "Graph path relative to the project root.")
+    .description("Generate or incrementally update graphify-out/graph.json.")
+    .action(async (projectRoot: string | undefined, opts: { graph?: string }) => {
+      await runSafely(async () => {
+        const root = projectRoot ?? process.cwd();
+        const result = await generateGraphifyGraph({
+          repositoryRoot: root,
+          ...(opts.graph ? { graphPath: opts.graph } : {}),
+        });
+        console.log(JSON.stringify(result, null, 2));
       });
     });
 
