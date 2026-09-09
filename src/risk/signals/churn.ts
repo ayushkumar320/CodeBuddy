@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 import type { Signal, SignalContribution } from "../types.js";
 
 export type ChurnSignalOptions = {
@@ -55,6 +56,8 @@ async function gitLogForPath(
   path: string,
   since: string,
 ): Promise<CommitRecord[]> {
+  const root = await runGit(repositoryRoot, ["rev-parse", "--show-toplevel"]);
+  if (root.code !== 0 || resolve(root.stdout.trim()) !== resolve(repositoryRoot)) return [];
   const result = await runGit(repositoryRoot, [
     "log",
     "--follow",

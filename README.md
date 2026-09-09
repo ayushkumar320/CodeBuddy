@@ -364,6 +364,18 @@ Outcomes are stored as reviewable Markdown under `.codebuddy/memory/`. A
 regression becomes path-specific incident memory and raises the next change's
 risk score for that area.
 
+If a repository already uses Graphify, CodeBuddy can consume its local graph
+without taking a Graphify dependency:
+
+```bash
+codebuddy change --graphify graphify-out/graph.json
+codebuddy change verify --graphify graphify-out/graph.json
+```
+
+The imported relationships enrich architecture dependents while CodeBuddy
+keeps its own policy, plan, verification, and team-memory signals layered on
+top.
+
 ### 11. Client workflow templates
 
 Teach Claude/Codex *when* to call each tool. Install writes an idempotent

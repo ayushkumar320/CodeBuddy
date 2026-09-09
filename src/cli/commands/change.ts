@@ -16,6 +16,7 @@ export function registerChangeCommand(
     .option("--paths <paths>", "Comma-separated repo-relative paths to review.")
     .option("--plan <id>", "Review the files listed in a plan.")
     .option("--no-git", "Do not include the current Git change set.")
+    .option("--graphify <path>", "Use a Graphify graph.json for deeper architecture edges.")
     .option("--json", "Print machine-readable JSON.")
     .action(async (opts: ChangeOptions) => {
       await runSafely(async () => {
@@ -34,6 +35,7 @@ export function registerChangeCommand(
     .option("--paths <paths>", "Comma-separated repo-relative paths to review.")
     .option("--plan <id>", "Review the files listed in a plan.")
     .option("--no-git", "Do not include the current Git change set.")
+    .option("--graphify <path>", "Use a Graphify graph.json for deeper architecture edges.")
     .option("--command <command>", "Override the detected test command.")
     .option("--timeout <ms>", "Stop the test command after this many milliseconds.", Number)
     .option("--json", "Print machine-readable JSON.")
@@ -59,6 +61,7 @@ type ChangeOptions = {
   plan?: string;
   git?: boolean;
   json?: boolean;
+  graphify?: string;
 };
 
 type VerifyOptions = ChangeOptions & {
@@ -72,6 +75,7 @@ function toInput(opts: ChangeOptions, namespace: string) {
     ...(opts.paths ? { paths: parsePaths(opts.paths) } : {}),
     ...(opts.plan ? { planId: opts.plan } : {}),
     ...(opts.git !== undefined ? { useGit: opts.git } : {}),
+    ...(opts.graphify ? { graphifyPath: opts.graphify } : {}),
   };
 }
 
