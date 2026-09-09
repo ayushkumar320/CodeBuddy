@@ -40,3 +40,20 @@ export type ChangeReport = {
   suggestions: Suggestion[];
   verification: ChangeVerification;
 };
+
+export type TestCommandSource = "explicit" | "package_script" | "package_manager";
+
+export type ChangeTestResult = {
+  status: "passed" | "failed" | "timed_out" | "not_run";
+  command: string | null;
+  source: TestCommandSource | null;
+  exitCode: number | null;
+  signal: string | null;
+  durationMs: number;
+  output: string;
+};
+
+export type ChangeVerificationResult = {
+  report: ChangeReport;
+  test: ChangeTestResult;
+};

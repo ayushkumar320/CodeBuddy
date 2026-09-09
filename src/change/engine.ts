@@ -1,4 +1,7 @@
-import { extname } from "node:path";
+import { spawn } from "node:child_process";
+import { constants } from "node:fs";
+import { access, readFile } from "node:fs/promises";
+import { extname, join } from "node:path";
 import { PlanFileStore, type PlanSpec } from "../core/plan-file-store.js";
 import { PlanLifecycle } from "../core/plan-lifecycle.js";
 import { buildArchitectureMap } from "../map/indexer.js";
@@ -6,9 +9,18 @@ import { assessRisk, resolveRiskPaths } from "../risk/service.js";
 import type { Assessment } from "../risk/types.js";
 import { generateSuggestions } from "../suggest/engine.js";
 import type { SuggestResult } from "../suggest/types.js";
-import type { ChangePlanSummary, ChangeReport, ChangeVerification } from "./types.js";
+import type {
+  ChangePlanSummary,
+  ChangeReport,
+  ChangeTestResult,
+  ChangeVerification,
+  ChangeVerificationResult,
+  TestCommandSource,
+} from "./types.js";
 
 const CODE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+const DEFAULT_TEST_TIMEOUT_MS = 120_000;
+const MAX_TEST_OUTPUT_CHARS = 12_000;
 
 export type ChangeReportInput = {
   repositoryRoot?: string;
@@ -16,6 +28,11 @@ export type ChangeReportInput = {
   paths?: string[];
   planId?: string;
   useGit?: boolean;
+};
+
+export type ChangeVerifyInput = ChangeReportInput & {
+  command?: string;
+  timeoutMs?: number;
 };
 
 /**
@@ -70,6 +87,139 @@ export async function buildChangeReport(input: ChangeReportInput): Promise<Chang
     suggestions: suggestions.suggestions,
     verification,
   };
+}
+
+/** Run the repository's verification command after producing the change report. */
+export async function verifyChange(input: ChangeVerifyInput): Promise<ChangeVerificationResult> {
+  const report = await buildChangeReport(input);
+  const detected = input.command
+    ? { command: input.command, source: "explicit" as const }
+    : await detectTestCommand(input.repositoryRoot ?? process.cwd());
+
+  if (!detected) {
+    return {
+      report,
+      test: {
+        status: "not_run",
+        command: null,
+        source: null,
+        exitCode: null,
+        signal: null,
+        durationMs: 0,
+        output: "No test command found. Pass --command or add a test script to package.json.",
+      },
+    };
+  }
+
+  return {
+    report,
+    test: await runTestCommand(
+      detected.command,
+      detected.source,
+      input.repositoryRoot ?? process.cwd(),
+      input.timeoutMs ?? DEFAULT_TEST_TIMEOUT_MS,
+    ),
+  };
+}
+
+async function detectTestCommand(
+  repositoryRoot: string,
+): Promise<{ command: string; source: TestCommandSource } | null> {
+  const packagePath = join(repositoryRoot, "package.json");
+  try {
+    const packageJson = JSON.parse(await readFile(packagePath, "utf8")) as {
+      scripts?: { test?: unknown };
+      packageManager?: unknown;
+    };
+    if (typeof packageJson.scripts?.test === "string") {
+      return {
+        command: `${packageManagerName(packageJson.packageManager)} test`,
+        source: "package_script",
+      };
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  for (const candidate of [
+    ["pnpm-lock.yaml", "pnpm test"],
+    ["yarn.lock", "yarn test"],
+    ["bun.lockb", "bun test"],
+    ["bun.lock", "bun test"],
+    ["package-lock.json", "npm test"],
+  ] as const) {
+    try {
+      await access(join(repositoryRoot, candidate[0]), constants.F_OK);
+      return { command: candidate[1], source: "package_manager" };
+    } catch {
+      // Try the next package-manager marker.
+    }
+  }
+  return null;
+}
+
+function packageManagerName(value: unknown): string {
+  if (typeof value !== "string") return "npm";
+  const name = value.split(/[\s@]/, 1)[0] ?? "npm";
+  return ["npm", "pnpm", "yarn", "bun"].includes(name) ? name : "npm";
+}
+
+function runTestCommand(
+  command: string,
+  source: TestCommandSource,
+  repositoryRoot: string,
+  timeoutMs: number,
+): Promise<ChangeTestResult> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("--timeout must be a positive number of milliseconds.");
+  }
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const child = spawn(command, {
+      cwd: repositoryRoot,
+      env: process.env,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    let timedOut = false;
+    const append = (chunk: Buffer | string) => {
+      output += chunk.toString();
+      if (output.length > MAX_TEST_OUTPUT_CHARS) {
+        output = `[output truncated; showing last ${MAX_TEST_OUTPUT_CHARS} characters]\n${output.slice(-MAX_TEST_OUTPUT_CHARS)}`;
+      }
+    };
+    child.stdout.on("data", append);
+    child.stderr.on("data", append);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, timeoutMs);
+    child.on("close", (exitCode, signal) => {
+      clearTimeout(timer);
+      resolve({
+        status: timedOut ? "timed_out" : exitCode === 0 ? "passed" : "failed",
+        command,
+        source,
+        exitCode,
+        signal,
+        durationMs: Date.now() - startedAt,
+        output: output.trim(),
+      });
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve({
+        status: "failed",
+        command,
+        source,
+        exitCode: null,
+        signal: null,
+        durationMs: Date.now() - startedAt,
+        output: `${output.trim()}\n${error.message}`.trim(),
+      });
+    });
+  });
 }
 
 function emptyAssessment(): Assessment {

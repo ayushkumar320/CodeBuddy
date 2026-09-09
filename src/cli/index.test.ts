@@ -92,6 +92,25 @@ describe("CLI end-to-end", () => {
     expect(parsed).toHaveProperty("verification");
   });
 
+  it("change verify --json runs an explicit command", async () => {
+    const root = await tempRepo();
+    const { code, stdout } = await runCli(
+      [
+        "change",
+        "verify",
+        "--no-git",
+        "--command",
+        "node -e \"process.stdout.write('ok')\"",
+        "--json",
+      ],
+      root,
+    );
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout) as { test: { status: string; output: string } };
+    expect(parsed.test.status).toBe("passed");
+    expect(parsed.test.output).toContain("ok");
+  });
+
   it("rules show prints the workflow template", async () => {
     const root = await tempRepo();
     const { code, stdout } = await runCli(["rules", "show"], root);
