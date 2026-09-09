@@ -120,6 +120,16 @@ codebuddy index                   # build the background index
 codebuddy rules install --client claude   # teach the agent when to call the tools
 ```
 
+For a zero-database setup that also enables PR reports:
+
+```bash
+npx @ayushkumar320/codebuddy init --non-interactive --github-action
+```
+
+This creates the local `.codebuddy/` scaffold and an idempotent
+`.github/workflows/codebuddy.yml` workflow. Commit the workflow to start
+receiving a CodeBuddy report on every pull request.
+
 ### No-database path (try the context engine in 30 seconds)
 
 Everything except semantic recall is file-based, so you can skip Postgres:
@@ -324,12 +334,47 @@ codebuddy change --json       # stable output for CI or another agent
 
 codebuddy change verify     # detects and runs npm/pnpm/yarn/bun test
 codebuddy change verify --command "npm run test:unit" --timeout 300000
+
+codebuddy eval             # run the committed readiness evaluation cases
 ```
 
 The status is `ready`, `review`, `blocked`, or `no_changes`. The command is
 read-only and is designed to run before a commit or as an agent checkpoint.
 `change verify` returns a non-zero exit code when tests fail, time out, or no
 test command can be found, and supports `--json` for CI integration.
+
+The evaluation dataset lives under `evals/` and is intentionally small,
+readable, and versioned. Extend it when changing risk thresholds or adding a
+new signal so product claims remain reproducible.
+
+Record the outcome of a real change so future reports learn from the project:
+
+```bash
+codebuddy learn outcome --outcome safe \
+  --paths src/auth/oauth.ts \
+  --summary "OAuth callback change passed review and regression tests."
+
+codebuddy learn outcome --outcome regression \
+  --paths src/auth/oauth.ts \
+  --severity high \
+  --summary "Dropped callback state caused a production login failure."
+```
+
+Outcomes are stored as reviewable Markdown under `.codebuddy/memory/`. A
+regression becomes path-specific incident memory and raises the next change's
+risk score for that area.
+
+If a repository already uses Graphify, CodeBuddy can consume its local graph
+without taking a Graphify dependency:
+
+```bash
+codebuddy change --graphify graphify-out/graph.json
+codebuddy change verify --graphify graphify-out/graph.json
+```
+
+The imported relationships enrich architecture dependents while CodeBuddy
+keeps its own policy, plan, verification, and team-memory signals layered on
+top.
 
 ### 11. Client workflow templates
 

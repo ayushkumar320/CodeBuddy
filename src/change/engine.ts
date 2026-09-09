@@ -4,6 +4,7 @@ import { access, readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { PlanFileStore, type PlanSpec } from "../core/plan-file-store.js";
 import { PlanLifecycle } from "../core/plan-lifecycle.js";
+import { loadGraphifyMap } from "../map/graphify.js";
 import { buildArchitectureMap } from "../map/indexer.js";
 import { assessRisk, resolveRiskPaths } from "../risk/service.js";
 import type { Assessment } from "../risk/types.js";
@@ -28,6 +29,7 @@ export type ChangeReportInput = {
   paths?: string[];
   planId?: string;
   useGit?: boolean;
+  graphifyPath?: string;
 };
 
 export type ChangeVerifyInput = ChangeReportInput & {
@@ -60,13 +62,16 @@ export async function buildChangeReport(input: ChangeReportInput): Promise<Chang
           repositoryRoot,
           namespace: input.namespace,
           paths,
+          ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
           ...(input.planId !== undefined ? { planId: input.planId } : {}),
         }),
     paths.length === 0
       ? Promise.resolve(emptySuggestions())
       : generateSuggestions({ repositoryRoot, namespace: input.namespace, paths }),
     resolveRelevantPlan(planStore, input.namespace, input.planId),
-    buildArchitectureMap(repositoryRoot),
+    input.graphifyPath
+      ? loadGraphifyMap(input.graphifyPath, repositoryRoot)
+      : buildArchitectureMap(repositoryRoot),
   ]);
 
   const planSummary = summarizePlan(plan, paths);

@@ -37,7 +37,7 @@ export async function assessRisk(input: RiskAssessRequest): Promise<Assessment> 
   const signals = input.signals ?? [
     createIncidentSignal({ store: memoryStore }),
     createPolicySignal({ repositoryRoot }),
-    createChurnSignal({ repositoryRoot }),
+    ...(input.useGit === false ? [] : [createChurnSignal({ repositoryRoot })]),
   ];
 
   const assessment = await new RiskAssessor(signals).assess({

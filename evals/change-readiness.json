@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "docs-only-ready",
+      "description": "Documentation changes should not trigger code-risk warnings.",
+      "fixture": "fixtures/docs-only",
+      "paths": ["README.md"],
+      "expectedStatus": "ready"
+    },
+    {
+      "id": "auth-policy-review",
+      "description": "Policy-protected authentication code should require review.",
+      "fixture": "fixtures/auth-risk",
+      "paths": ["src/auth.ts"],
+      "expectedStatus": "review",
+      "minimumRisk": 70
+    },
+    {
+      "id": "untested-code-review",
+      "description": "Changed code without a discoverable test should require review.",
+      "fixture": "fixtures/untested",
+      "paths": ["src/widget.ts"],
+      "expectedStatus": "review",
+      "requiredCategories": ["missing_test"]
+    }
+  ]
+}
