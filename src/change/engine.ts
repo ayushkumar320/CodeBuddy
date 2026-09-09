@@ -62,6 +62,7 @@ export async function buildChangeReport(input: ChangeReportInput): Promise<Chang
           repositoryRoot,
           namespace: input.namespace,
           paths,
+          ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
           ...(input.planId !== undefined ? { planId: input.planId } : {}),
         }),
     paths.length === 0
