@@ -14,7 +14,7 @@ import type { Assessment } from "../risk/types.js";
 import type { SavingsStats } from "../savings/types.js";
 
 /** Where the caller/derived target paths came from, for explainability. */
-export type PathSource = "paths" | "plan" | "git" | "none";
+export type PathSource = "paths" | "plan" | "git" | "task" | "none";
 
 export type ProjectIdentity = {
   namespace: string;

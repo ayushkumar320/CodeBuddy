@@ -264,6 +264,22 @@ codebuddy context explain --git
 
 Over MCP these are `context_bootstrap` and `context_before_edit`.
 
+For Claude and Codex, the simplest integration is the single-call
+`context_pack` tool:
+
+```text
+context_pack({
+  "task": "fix the OAuth callback",
+  "tokenBudget": 4000
+})
+```
+
+It automatically ranks files from the local index when paths are omitted, then
+returns bounded symbols, policies, risks, incidents, architecture neighbours,
+and relevant team facts. The agent does not need to manually chain recall,
+risk, map, and context tools. The response includes token accounting and what
+was omitted when the budget is tight.
+
 ### 7. Automatic memory capture + review queue
 
 After a turn, `context_after_turn` (MCP) turns a summary into classified
@@ -481,6 +497,7 @@ CodeBuddy ships tools over stdio (`codebuddy serve`). HTTP transport is deferred
 | `map_query` / `map_neighbours` | graph query | edges / `{ modules, edges }` |
 | `context_bootstrap` | `{}` | `{ project, plan, policy, policyRules, incidents, architecture, tokens }` |
 | `context_before_edit` | `{ task?, paths?, planId?, useGit? }` | `{ targetPaths, plan, policyRules, incidents, risks, neighbours, tokens }` |
+| `context_pack` | `{ task, paths?, planId?, useGit?, tokenBudget? }` | `{ targetPaths, symbols, plan, policyRules, incidents, risks, neighbours, facts, tokens }` |
 | `context_after_turn` | `{ summary, changedFiles?, planId?, taskType?, agentId? }` | `{ saved, queuedForReview, ignored, reasons }` |
 | `code_suggestions` | `{ paths?, planId?, useGit?, limit? }` | `{ suggestions, stats }` |
 

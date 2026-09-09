@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { MemoryFileStore } from "../core/memory-file-store.js";
 import { PlanFileStore } from "../core/plan-file-store.js";
 import { PlanLifecycle } from "../core/plan-lifecycle.js";
+import { indexRepository } from "../indexer/engine.js";
 import { buildBeforeEditContext, buildBootstrapContext } from "./engine.js";
 
 const roots: string[] = [];
@@ -136,6 +137,19 @@ describe("buildBeforeEditContext", () => {
       planId: (plan as { id: string }).id,
     });
     expect(ctx.pathSource).toBe("plan");
+    expect(ctx.targetPaths).toContain("src/auth/oauth.ts");
+  });
+
+  it("discovers relevant files from the indexed task when paths are omitted", async () => {
+    const root = await seedRepo();
+    await indexRepository({ repositoryRoot: root });
+    const ctx = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      task: "fix the OAuth callback",
+      useGit: false,
+    });
+    expect(ctx.pathSource).toBe("task");
     expect(ctx.targetPaths).toContain("src/auth/oauth.ts");
   });
 

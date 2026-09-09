@@ -141,6 +141,17 @@ export const mcpToolInputSchemas = {
       .optional(),
     planId: z.string().min(1).max(100).optional(),
     useGit: z.boolean().optional(),
+    tokenBudget: z.number().int().positive().max(100_000).optional(),
+  }),
+  context_pack: z.object({
+    task: z.string().min(1).max(INPUT_LIMITS.taskChars),
+    paths: z
+      .array(z.string().min(1).max(INPUT_LIMITS.pathChars))
+      .max(INPUT_LIMITS.arrayItems)
+      .optional(),
+    planId: z.string().min(1).max(100).optional(),
+    useGit: z.boolean().optional(),
+    tokenBudget: z.number().int().positive().max(100_000).optional(),
   }),
   context_after_turn: z.object({
     summary: z.string().min(1).max(INPUT_LIMITS.summaryChars),
@@ -478,7 +489,30 @@ export function registerCodeBuddyTools(server: McpServer, options: RegisterCodeB
           ...(input.paths !== undefined ? { paths: input.paths } : {}),
           ...(input.planId !== undefined ? { planId: input.planId } : {}),
           ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
-          ...(tokenBudget !== undefined ? { tokenBudget } : {}),
+          ...(input.tokenBudget !== undefined ? { tokenBudget: input.tokenBudget } : {}),
+          ...(tokenBudget !== undefined && input.tokenBudget === undefined ? { tokenBudget } : {}),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "context_pack",
+    {
+      title: "Build task context pack",
+      description:
+        "Build the smallest useful context pack for a coding task. Automatically finds relevant files from the local index when paths are omitted, then includes only bounded symbols, policies, risks, incidents, architecture neighbours, and relevant team facts within the requested token budget. Use this once at the start of a task instead of manually chaining context, risk, map, and memory tools.",
+      inputSchema: mcpToolInputSchemas.context_pack.shape,
+    },
+    async (input) =>
+      json(
+        await buildBeforeEditContext({
+          repositoryRoot: projectRoot,
+          namespace,
+          task: input.task,
+          ...(input.paths !== undefined ? { paths: input.paths } : {}),
+          ...(input.planId !== undefined ? { planId: input.planId } : {}),
+          ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
+          tokenBudget: input.tokenBudget ?? tokenBudget ?? 4_000,
         }),
       ),
   );
