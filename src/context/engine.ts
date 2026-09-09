@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { loadPlanPolicy } from "../core/config-file.js";
+import { loadPlanPolicy, readConfigFile } from "../core/config-file.js";
 import {
   type FactFile,
   type IncidentFactFile,
@@ -12,7 +12,9 @@ import { indexRepository } from "../indexer/engine.js";
 import { IndexStore } from "../indexer/store.js";
 import { extractSymbolTable, supportsSymbols, symbolSignatures } from "../indexer/symbols.js";
 import type { IndexManifest } from "../indexer/types.js";
+import { graphifyGraphExists } from "../integrations/graphify.js";
 import { loadArchitectureMap } from "../map/cache.js";
+import { loadGraphifyMap } from "../map/graphify.js";
 import type { ArchitectureMap } from "../map/types.js";
 import { assessRisk, resolveRiskPaths } from "../risk/service.js";
 import { matchesPolicyGlob, type PolicyRule, readPolicyFile } from "../risk/signals/policy.js";
@@ -86,9 +88,7 @@ export async function buildBootstrapContext(input: BootstrapInput): Promise<Boot
   const planStore = new PlanFileStore(repositoryRoot);
   const memoryStore = new MemoryFileStore(repositoryRoot);
   const manifestPromise = new IndexStore(repositoryRoot).read();
-  const mapPromise = manifestPromise.then(
-    async (manifest) => (await loadArchitectureMap(repositoryRoot, manifest)).map,
-  );
+  const mapPromise = loadProjectArchitectureMap(repositoryRoot, manifestPromise);
 
   const [activePlan, policy, policyFile, incidents, facts, manifest, map] = await Promise.all([
     new PlanLifecycle(planStore).current(namespace),
@@ -170,9 +170,7 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
   const planStore = new PlanFileStore(repositoryRoot);
   const memoryStore = new MemoryFileStore(repositoryRoot);
   const manifestPromise = new IndexStore(repositoryRoot).read();
-  const mapPromise = manifestPromise.then(
-    async (manifest) => (await loadArchitectureMap(repositoryRoot, manifest)).map,
-  );
+  const mapPromise = loadProjectArchitectureMap(repositoryRoot, manifestPromise);
 
   const [referencedPlan, policy, policyFile, incidents, facts, risks, manifest, map] =
     await Promise.all([
@@ -624,6 +622,20 @@ async function discoverTaskPaths(repositoryRoot: string, task: string): Promise<
     .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
     .slice(0, LIMITS.symbolFiles)
     .map((entry) => entry.path);
+}
+
+async function loadProjectArchitectureMap(
+  repositoryRoot: string,
+  manifestPromise: Promise<IndexManifest>,
+): Promise<ArchitectureMap> {
+  const [config, manifest] = await Promise.all([readConfigFile(repositoryRoot), manifestPromise]);
+  if (config.graphify?.enabled && (await graphifyGraphExists(repositoryRoot))) {
+    return loadGraphifyMap(
+      join(repositoryRoot, config.graphify.graphPath ?? "graphify-out/graph.json"),
+      repositoryRoot,
+    );
+  }
+  return (await loadArchitectureMap(repositoryRoot, manifest)).map;
 }
 
 /**
