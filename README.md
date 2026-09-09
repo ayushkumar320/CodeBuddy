@@ -347,6 +347,23 @@ The evaluation dataset lives under `evals/` and is intentionally small,
 readable, and versioned. Extend it when changing risk thresholds or adding a
 new signal so product claims remain reproducible.
 
+Record the outcome of a real change so future reports learn from the project:
+
+```bash
+codebuddy learn outcome --outcome safe \
+  --paths src/auth/oauth.ts \
+  --summary "OAuth callback change passed review and regression tests."
+
+codebuddy learn outcome --outcome regression \
+  --paths src/auth/oauth.ts \
+  --severity high \
+  --summary "Dropped callback state caused a production login failure."
+```
+
+Outcomes are stored as reviewable Markdown under `.codebuddy/memory/`. A
+regression becomes path-specific incident memory and raises the next change's
+risk score for that area.
+
 ### 11. Client workflow templates
 
 Teach Claude/Codex *when* to call each tool. Install writes an idempotent

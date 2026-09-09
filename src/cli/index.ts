@@ -24,6 +24,7 @@ import { registerGitHubCommands } from "./commands/github.js";
 import { registerHooksCommands } from "./commands/hooks.js";
 import { registerIndexCommands } from "./commands/indexing.js";
 import { runInitWizard } from "./commands/init-wizard.js";
+import { registerLearnCommand } from "./commands/learn.js";
 import { registerMapCommands } from "./commands/map.js";
 import { registerMemoryCommands } from "./commands/memory-review.js";
 import { registerPlanCommands } from "./commands/plan.js";
@@ -433,6 +434,7 @@ export function createCli(): Command {
   registerContextCommands(program, runSafely);
   registerEvalCommand(program, runSafely);
   registerIndexCommands(program, runSafely);
+  registerLearnCommand(program, runSafely);
   registerMemoryCommands(program, runSafely);
   registerSavingsCommand(program, runSafely);
   registerSuggestCommand(program, runSafely);
