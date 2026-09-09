@@ -154,14 +154,16 @@ connection, apply migrations, install `CLAUDE.md` and `AGENTS.md` workflow
 instructions, and register Claude/Codex MCP entries. Credentials stay in the
 private CodeBuddy config, not in `.mcp.json`.
 
-When Graphify is enabled, ask the connected agent to run:
+When Graphify is enabled, setup builds the graph automatically. To refresh it
+after repository changes, run:
 
-```text
-/graphify .
+```bash
+codebuddy graphify index
 ```
 
-That creates `graphify-out/graph.json`; CodeBuddy consumes it automatically for
-architecture context.
+That creates or updates `graphify-out/graph.json`; CodeBuddy consumes it
+automatically for architecture context. `codebuddy serve` also prepares a
+missing or invalid graph before starting.
 
 Run the setup wizard:
 

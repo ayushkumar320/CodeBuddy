@@ -203,7 +203,7 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
     const graphifySetup = graphifyEnabled
       ? await setupGraphify({ repositoryRoot: process.cwd() })
       : null;
-    const graphifyConfigured = graphifySetup?.available ?? false;
+    const graphifyConfigured = graphifySetup?.available === true && graphifySetup.generated;
     await writeConfigFile({
       ...existingConfig,
       postgresUrl: databaseUrl,
@@ -219,6 +219,7 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
       repositoryRoot: process.cwd(),
       namespace,
       graphify: graphifyConfigured,
+      ...(graphifySetup?.graphPath ? { graphPath: graphifySetup.graphPath } : {}),
     });
     await installWorkflowRules({ client: "claude", projectRoot: process.cwd() });
     await installWorkflowRules({ client: "codex", projectRoot: process.cwd() });
@@ -267,8 +268,8 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
         `Next:`,
         `  1. Restart Claude Desktop and Codex.`,
         `  2. Ask Claude or Codex to use the ${pc.cyan("context_pack")} tool for each coding task.`,
-        `  3. If Graphify is enabled, run ${pc.cyan("/graphify .")} once in your agent to build the local graph.`,
-        `  3. Run ${pc.cyan("codebuddy doctor")} or ${pc.cyan("codebuddy db doctor")} if you want a full health check.`,
+        `  3. If Graphify is enabled, refresh it with ${pc.cyan("codebuddy graphify index")} after code changes.`,
+        `  4. Run ${pc.cyan("codebuddy doctor")} or ${pc.cyan("codebuddy db doctor")} if you want a full health check.`,
         ``,
         `Manage:`,
         `  codebuddy claude list           ${pc.dim("# see every project wired up")}`,

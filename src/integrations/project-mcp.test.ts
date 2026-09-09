@@ -34,8 +34,9 @@ describe("writeProjectMcpConfig", () => {
     expect(config.mcpServers.graphify?.args).toEqual([
       "-m",
       "graphify.serve",
-      "graphify-out/graph.json",
+      join(root, "graphify-out/graph.json"),
     ]);
+    expect(config.mcpServers.graphify?.env?.CODEBUDDY_PROJECT_ROOT).toBe(root);
   });
 
   it("removes a previously configured Graphify server when disabled", async () => {
