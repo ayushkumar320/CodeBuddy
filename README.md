@@ -115,7 +115,7 @@ Two design rules run through everything:
 ```bash
 npm install -g @ayushkumar320/codebuddy
 cd ~/Projects/your-project
-codebuddy                         # first-run setup for the open folder
+codebuddy                         # first-run setup; offers to start Docker when needed
 codebuddy use your-project        # repeat setup for a named namespace
 codebuddy index                   # build the background index
 codebuddy rules install --client claude   # teach the agent when to call the tools
@@ -184,11 +184,15 @@ codebuddy suggest --git
 
 ### Bring-your-own vs. bundled Postgres
 
+The normal setup flow checks the default local Postgres URL first. If it is not
+reachable, CodeBuddy offers to start Docker Desktop and its bundled pgvector
+database automatically. Choose `No` if you want to configure Postgres yourself.
+Use `codebuddy use --no-docker` to skip that offer in scripts or controlled
+environments.
+
 ```bash
-# Optional bundled pgvector container (needs Docker; local Postgres is the default)
+# Manual control is still available:
 codebuddy postgres up
-export DATABASE_URL="postgres://codebuddy:codebuddy@localhost:5432/codebuddy"
-codebuddy migrate
 codebuddy doctor                  # DB, pgvector, scaffold, model health
 
 # Or your own database — the URL must include real user:password

@@ -46,6 +46,12 @@ export function createCli(): Command {
     )
     .version(VERSION);
 
+  program.action(async () => {
+    await runSafely(async () => {
+      await runUseCommand();
+    });
+  });
+
   program
     .command("use")
     .description(
@@ -57,7 +63,11 @@ export function createCli(): Command {
     .option("--skip-codex", "Do not register with Codex.")
     .option("--graphify", "Enable Graphify setup without prompting.")
     .option("--no-graphify", "Skip Graphify setup without prompting.")
-    .option("--docker", "Opt in to starting CodeBuddy's bundled Postgres container.")
+    .option(
+      "--docker",
+      "Start CodeBuddy's bundled Postgres container when the default DB is unavailable.",
+    )
+    .option("--no-docker", "Do not offer to start CodeBuddy's bundled Postgres container.")
     .action(
       async (
         namespace: string | undefined,
