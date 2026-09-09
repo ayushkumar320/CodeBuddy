@@ -10,8 +10,7 @@ describe("runEvaluation", () => {
       "../../evals/change-readiness.json",
     );
     const result = await runEvaluation({ datasetPath });
-    if (!result.passed) throw new Error(JSON.stringify(result, null, 2));
-    expect(result).toMatchObject({ passed: true });
+    expect(result.passed).toBe(true);
     expect(result.summary.total).toBeGreaterThanOrEqual(3);
   });
 });

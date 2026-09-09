@@ -1,0 +1,5 @@
+rules:
+  - id: auth-sensitive
+    pattern: "src/auth.ts"
+    message: "Authentication changes need careful review."
+    weight: 70
