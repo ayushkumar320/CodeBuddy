@@ -20,6 +20,25 @@ const NON_DEPENDENCY_RELATIONS = new Set([
   "rationale_for",
 ]);
 
+/**
+ * Graphify's graph is undirected, so a relation phrased from the dependency's
+ * point of view ("b is imported by a") arrives with its endpoints the wrong way
+ * round for a dependency edge. These are swapped rather than dropped.
+ */
+const INVERSE_RELATIONS = new Set([
+  "imported_by",
+  "called_by",
+  "used_by",
+  "referenced_by",
+  "extended_by",
+  "implemented_by",
+  "dependency_of",
+  "depended_on_by",
+]);
+
+/** How many symbol names an edge carries, so a large fan-in stays bounded. */
+const MAX_EDGE_SYMBOLS = 8;
+
 /** Import the common graph.json node/edge shape without depending on Graphify. */
 export async function loadGraphifyMap(
   graphPath: string,
@@ -29,6 +48,7 @@ export async function loadGraphifyMap(
   const nodes = arrayRecord(raw.nodes ?? raw.entities);
   const edges = arrayRecord(raw.edges ?? raw.links ?? raw.relationships);
   const nodePaths = new Map<string, string>();
+  const nodeLabels = new Map<string, string>();
   const modules: ModuleNode[] = [];
 
   for (const node of nodes) {
@@ -36,6 +56,9 @@ export async function loadGraphifyMap(
     const path = graphifyPath(node, repositoryRoot);
     if (!id || !path) continue;
     nodePaths.set(id, path);
+    const label = stringValue(node.label ?? node.name);
+    // The node standing for the file itself carries no useful symbol name.
+    if (label && label !== path && !path.endsWith(`/${label}`)) nodeLabels.set(id, label);
     modules.push({ path, language: languageFor(path), imports: [] });
   }
 
@@ -44,13 +67,22 @@ export async function loadGraphifyMap(
   for (const edge of edges) {
     const relation = stringValue(edge.relation ?? edge.type ?? edge.kind)?.toLowerCase() ?? null;
     if (relation && NON_DEPENDENCY_RELATIONS.has(relation)) continue;
-    const from = endpointPath(edge.from ?? edge.source, nodePaths, repositoryRoot);
-    const to = endpointPath(edge.to ?? edge.target, nodePaths, repositoryRoot);
+    const inverse = relation !== null && INVERSE_RELATIONS.has(relation);
+    const sourceEndpoint = edge.from ?? edge.source;
+    const targetEndpoint = edge.to ?? edge.target;
+    const [tail, head] = inverse
+      ? [targetEndpoint, sourceEndpoint]
+      : [sourceEndpoint, targetEndpoint];
+    const from = endpointPath(tail, nodePaths, repositoryRoot);
+    const to = endpointPath(head, nodePaths, repositoryRoot);
     if (!from || !to || !modulePaths.has(from) || !modulePaths.has(to) || from === to) continue;
+    // The endpoint inside the dependency names the symbol the dependant uses.
+    const symbol = endpointLabel(head, nodeLabels);
     importedEdges.push({
       from,
       to,
       kind: relation?.includes("dynamic") ? "dynamic_import" : "import",
+      ...(symbol ? { symbols: [symbol] } : {}),
     });
   }
 
@@ -61,8 +93,17 @@ export async function loadGraphifyMap(
   for (const edge of importedEdges) {
     const key = `${edge.from}:${edge.to}`;
     const existing = byEndpoints.get(key);
-    if (!existing || (existing.kind === "dynamic_import" && edge.kind === "import"))
+    if (!existing) {
       byEndpoints.set(key, edge);
+      continue;
+    }
+    // Several symbol-level links collapse into one file edge: keep every symbol
+    // name, and let a static import win over a dynamic one.
+    const symbols = mergeSymbols(existing.symbols, edge.symbols);
+    byEndpoints.set(key, {
+      ...(existing.kind === "dynamic_import" && edge.kind === "import" ? edge : existing),
+      ...(symbols ? { symbols } : {}),
+    });
   }
   const uniqueEdges = [...byEndpoints.values()].sort((left, right) =>
     `${left.from}:${left.to}`.localeCompare(`${right.from}:${right.to}`),
@@ -96,6 +137,18 @@ function endpointPath(
   const record = endpoint as GraphifyRecord;
   const id = stringValue(record.id ?? record.key ?? record.name);
   return nodePaths.get(id ?? "") ?? graphifyPath(record, repositoryRoot);
+}
+
+function endpointLabel(endpoint: unknown, nodeLabels: Map<string, string>): string | null {
+  if (typeof endpoint === "string") return nodeLabels.get(endpoint) ?? null;
+  if (!endpoint || typeof endpoint !== "object") return null;
+  const id = stringValue((endpoint as GraphifyRecord).id);
+  return id ? (nodeLabels.get(id) ?? null) : null;
+}
+
+function mergeSymbols(left?: string[], right?: string[]): string[] | undefined {
+  if (!left && !right) return undefined;
+  return [...new Set([...(left ?? []), ...(right ?? [])])].sort().slice(0, MAX_EDGE_SYMBOLS);
 }
 
 function graphifyPath(node: GraphifyRecord, repositoryRoot: string): string | null {

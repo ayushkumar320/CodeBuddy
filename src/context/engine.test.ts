@@ -126,6 +126,37 @@ describe("buildBootstrapContext", () => {
     expect(ctx.architecture.edgeCount).toBe(2);
   });
 
+  it("reports the symbols a file uses from each dependency", async () => {
+    const root = await seedRepo();
+    await writeGraphifyGraph(root, {
+      nodes: [
+        { id: "login", label: "login()", source_file: "src/auth/oauth.ts" },
+        { id: "verify", label: "verify()", source_file: "src/auth/verify.ts" },
+      ],
+      links: [{ source: "login", target: "verify", relation: "imports_from" }],
+    });
+    const ctx = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      task: "fix the OAuth callback",
+      paths: ["src/auth/oauth.ts"],
+    });
+    const neighbour = ctx.neighbours.find((entry) => entry.path === "src/auth/oauth.ts");
+    expect(neighbour?.dependsOn).toEqual(["src/auth/verify.ts"]);
+    expect(neighbour?.usesSymbols).toEqual({ "src/auth/verify.ts": ["verify()"] });
+  });
+
+  it("omits usesSymbols when the architecture source has no symbol names", async () => {
+    const root = await seedRepo();
+    const ctx = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      task: "fix the OAuth callback",
+      paths: ["src/auth/oauth.ts"],
+    });
+    expect(ctx.neighbours[0]?.usesSymbols).toBeUndefined();
+  });
+
   it("falls back to the built-in map when the Graphify graph has no usable relationships", async () => {
     const root = await seedRepo();
     await writeGraphifyGraph(root, {

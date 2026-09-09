@@ -95,8 +95,9 @@ function printReport(report: ChangeReport): void {
   console.log(`  ${report.paths.length} path(s): ${report.paths.join(", ")}`);
   console.log(`  highest risk: ${report.risk.highestScore}`);
   console.log(
-    `  architecture: ${report.architecture.totalDependents} direct dependent edge(s) across the change set`,
+    `  architecture: ${report.architecture.totalDependents} direct dependent edge(s) across the change set (${report.architecture.source})`,
   );
+  if (report.architecture.warning) console.log(pc.yellow(`  ${report.architecture.warning}`));
   if (report.plan) {
     console.log(`  plan: ${report.plan.id} ${report.plan.title} (${report.plan.status})`);
     if (report.plan.unexpectedPaths.length > 0)
