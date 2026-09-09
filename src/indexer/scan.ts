@@ -12,8 +12,8 @@ import { SUPPORTED_EXTENSIONS } from "./summary.js";
  * fall back to a plain walk with a conservative ignore list so indexing still
  * works on partially configured repos.
  *
- * CodeBuddy's own `.codebuddy/` artifacts are always excluded — the index does
- * not index itself.
+ * CodeBuddy's own generated artifacts (`.codebuddy/`, `graphify-out/`) are
+ * always excluded — the index does not index itself.
  */
 
 const FALLBACK_IGNORED_DIRECTORIES = new Set([
@@ -23,6 +23,7 @@ const FALLBACK_IGNORED_DIRECTORIES = new Set([
   "build",
   "coverage",
   ".codebuddy",
+  "graphify-out",
   ".next",
   ".turbo",
   "out",
@@ -33,7 +34,7 @@ export async function listIndexableFiles(repositoryRoot: string): Promise<string
   const paths = tracked ?? (await walkFiles(repositoryRoot));
   return paths
     .map(normalize)
-    .filter((path) => !path.startsWith(".codebuddy/"))
+    .filter((path) => !path.startsWith(".codebuddy/") && !path.startsWith("graphify-out/"))
     .filter((path) => SUPPORTED_EXTENSIONS.has(extname(path).toLowerCase()))
     .sort();
 }

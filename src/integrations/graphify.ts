@@ -145,6 +145,7 @@ export async function generateGraphifyGraph(
   const graphPath = options.graphPath ?? DEFAULT_GRAPH_PATH;
   const destination = resolveGraphPath(repositoryRoot, graphPath);
   await mkdir(dirname(destination), { recursive: true });
+  await ignoreGeneratedGraphDirectory(dirname(destination));
 
   const current = await readGraphFileIfPresent(destination);
   const isDefaultPath = graphPath === DEFAULT_GRAPH_PATH;
@@ -178,6 +179,20 @@ export async function generateGraphifyGraph(
   }
 }
 
+/**
+ * The graph directory is derived output CodeBuddy writes itself, so it is
+ * self-ignoring like `.codebuddy/`. An existing .gitignore is never rewritten:
+ * a project that deliberately commits its graph keeps doing so.
+ */
+async function ignoreGeneratedGraphDirectory(directory: string): Promise<void> {
+  const path = join(directory, ".gitignore");
+  try {
+    await stat(path);
+  } catch {
+    await writeAtomic(path, "# CodeBuddy-generated Graphify output (derived, rebuildable)\n*\n");
+  }
+}
+
 function resolveGraphPath(repositoryRoot: string, graphPath: string): string {
   const absolute = resolve(repositoryRoot, graphPath);
   const relativePath = relative(repositoryRoot, absolute);
@@ -203,7 +218,7 @@ async function readGraphFile(path: string): Promise<{ nodes: number; edges: numb
     throw new Error(`Graphify graph is missing or empty: ${path}`);
   const raw = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
   const nodes = arrayLength(raw.nodes ?? raw.entities);
-  const edges = arrayLength(raw.edges ?? raw.relationships);
+  const edges = arrayLength(raw.edges ?? raw.links ?? raw.relationships);
   if (nodes === 0) throw new Error(`Graphify graph contains no nodes: ${path}`);
   return { nodes, edges };
 }

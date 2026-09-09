@@ -67,6 +67,18 @@ async function seedRepo(): Promise<string> {
   return root;
 }
 
+async function writeGraphifyGraph(root: string, graph: unknown): Promise<void> {
+  await mkdir(join(root, "graphify-out"), { recursive: true });
+  await writeFile(join(root, "graphify-out", "graph.json"), JSON.stringify(graph));
+  await writeFile(
+    join(root, ".codebuddy", "config.json"),
+    JSON.stringify({
+      namespace: "proj",
+      graphify: { enabled: true, graphPath: "graphify-out/graph.json" },
+    }),
+  );
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -90,6 +102,42 @@ describe("buildBootstrapContext", () => {
     expect(ctx.tokens.savings.available).toBe(true);
     expect(ctx.tokens.savings.savedTokens).toBeGreaterThanOrEqual(0);
     expect(ctx.explain.length).toBeGreaterThan(0);
+  });
+
+  it("uses a Graphify node-link graph for the architecture map", async () => {
+    const root = await seedRepo();
+    // Relative and absolute source_file paths, plus an edge the regex import
+    // map cannot see, so these counts can only come from Graphify.
+    await writeGraphifyGraph(root, {
+      nodes: [
+        { id: "oauth_login", source_file: "src/auth/oauth.ts" },
+        { id: "verify_fn", source_file: join(root, "src", "auth", "verify.ts") },
+        { id: "session_store", source_file: "src/auth/session.ts" },
+        { id: "env_only", label: "CODEBUDDY_NAMESPACE" },
+      ],
+      links: [
+        { source: "oauth_login", target: "verify_fn", relation: "imports_from" },
+        { source: "oauth_login", target: "session_store", relation: "calls" },
+        { source: "oauth_login", target: "env_only", relation: "requires_env" },
+      ],
+    });
+    const ctx = await buildBootstrapContext({ repositoryRoot: root, namespace: "proj" });
+    expect(ctx.architecture.moduleCount).toBe(3);
+    expect(ctx.architecture.edgeCount).toBe(2);
+  });
+
+  it("falls back to the built-in map when the Graphify graph has no usable relationships", async () => {
+    const root = await seedRepo();
+    await writeGraphifyGraph(root, {
+      nodes: [
+        { id: "a", source_file: "src/auth/oauth.ts" },
+        { id: "b", source_file: "src/auth/oauth.ts" },
+      ],
+      links: [{ source: "a", target: "b", relation: "calls" }],
+    });
+    const ctx = await buildBootstrapContext({ repositoryRoot: root, namespace: "proj" });
+    expect(ctx.architecture.moduleCount).toBeGreaterThan(0);
+    expect(ctx.architecture.edgeCount).toBeGreaterThan(0);
   });
 
   it("reports no active plan when none is approved", async () => {
