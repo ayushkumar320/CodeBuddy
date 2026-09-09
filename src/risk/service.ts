@@ -76,7 +76,7 @@ export async function resolveRiskPaths(input: {
     }
   }
 
-  if (input.useGit || paths.size === 0) {
+  if (input.useGit !== false && (input.useGit || paths.size === 0)) {
     for (const path of await changedGitPaths(input.repositoryRoot)) {
       const contained = containedRelativePath(input.repositoryRoot, path);
       if (contained) paths.add(contained);

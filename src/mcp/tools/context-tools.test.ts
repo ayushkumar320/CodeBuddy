@@ -23,6 +23,15 @@ describe("context MCP tool schemas", () => {
     expect(parsed.useGit).toBe(true);
   });
 
+  it("context_pack accepts a task and token budget", () => {
+    const parsed = mcpToolInputSchemas.context_pack.parse({
+      task: "fix OAuth callback",
+      tokenBudget: 2500,
+    });
+    expect(parsed.task).toBe("fix OAuth callback");
+    expect(parsed.tokenBudget).toBe(2500);
+  });
+
   it("context_before_edit rejects an empty path string", () => {
     expect(() => mcpToolInputSchemas.context_before_edit.parse({ paths: [""] })).toThrow();
   });

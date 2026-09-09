@@ -8,6 +8,7 @@ import {
 } from "../core/memory-file-store.js";
 import { PlanFileStore, type PlanSpec } from "../core/plan-file-store.js";
 import { PlanLifecycle } from "../core/plan-lifecycle.js";
+import { indexRepository } from "../indexer/engine.js";
 import { IndexStore } from "../indexer/store.js";
 import { extractSymbolTable, supportsSymbols, symbolSignatures } from "../indexer/symbols.js";
 import type { IndexManifest } from "../indexer/types.js";
@@ -152,13 +153,19 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
   const repositoryRoot = resolve(input.repositoryRoot ?? process.cwd());
   const namespace = input.namespace;
 
-  const targetPaths = await resolveRiskPaths({
+  const resolvedPaths = await resolveRiskPaths({
     repositoryRoot,
     ...(input.paths !== undefined ? { paths: input.paths } : {}),
     ...(input.planId !== undefined ? { planId: input.planId } : {}),
     ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
   });
-  const pathSource = classifyPathSource(input, targetPaths.length);
+  const taskPaths =
+    resolvedPaths.length === 0 && input.task
+      ? await discoverTaskPaths(repositoryRoot, input.task)
+      : [];
+  const targetPaths = taskPaths.length > 0 ? taskPaths : resolvedPaths;
+  const discoveredFromTask = taskPaths.length > 0;
+  const pathSource = classifyPathSource(input, targetPaths.length, discoveredFromTask);
 
   const planStore = new PlanFileStore(repositoryRoot);
   const memoryStore = new MemoryFileStore(repositoryRoot);
@@ -177,9 +184,17 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
       assessRisk({
         repositoryRoot,
         namespace,
-        ...(input.paths !== undefined ? { paths: input.paths } : {}),
+        ...(discoveredFromTask
+          ? { paths: targetPaths }
+          : input.paths !== undefined
+            ? { paths: input.paths }
+            : {}),
         ...(input.planId !== undefined ? { planId: input.planId } : {}),
-        ...(input.useGit !== undefined ? { useGit: input.useGit } : {}),
+        ...(discoveredFromTask
+          ? { useGit: false }
+          : input.useGit !== undefined
+            ? { useGit: input.useGit }
+            : {}),
       }),
       manifestPromise,
       mapPromise,
@@ -570,11 +585,45 @@ function normalizeText(value: string): string {
     .trim();
 }
 
-function classifyPathSource(input: BeforeEditInput, resolvedCount: number): PathSource {
+function classifyPathSource(
+  input: BeforeEditInput,
+  resolvedCount: number,
+  discoveredFromTask: boolean,
+): PathSource {
   if (resolvedCount === 0) return "none";
+  if (discoveredFromTask) return "task";
   if (input.paths && input.paths.length > 0) return "paths";
   if (input.planId) return "plan";
   return "git";
+}
+
+/** Rank cached file summaries for a task when the agent has not named files. */
+async function discoverTaskPaths(repositoryRoot: string, task: string): Promise<string[]> {
+  const store = new IndexStore(repositoryRoot);
+  let manifest = await store.read();
+  if (Object.keys(manifest.entries).length === 0) {
+    await indexRepository({ repositoryRoot });
+    manifest = await store.read();
+  }
+  const terms = new Set(
+    normalizeText(task)
+      .split(" ")
+      .filter((term) => term.length > 2),
+  );
+  if (terms.size === 0) return [];
+  return Object.values(manifest.entries)
+    .map((entry) => {
+      const haystack = normalizeText(`${entry.path} ${entry.summary} ${entry.symbols.join(" ")}`);
+      const score = [...terms].reduce(
+        (total, term) => total + (haystack.includes(term) ? 1 : 0),
+        0,
+      );
+      return { path: entry.path, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
+    .slice(0, LIMITS.symbolFiles)
+    .map((entry) => entry.path);
 }
 
 /**
