@@ -1,11 +1,14 @@
 import { basename } from "node:path";
 import { confirm, isCancel, log, note, password, spinner, text } from "@clack/prompts";
 import pc from "picocolors";
-import { initProjectScaffold } from "../../core/config-file.js";
+import { initProjectScaffold, readConfigFile, writeConfigFile } from "../../core/config-file.js";
 import { mergeGlobalConfig, readGlobalConfig } from "../../core/global-config.js";
 import { bootstrapDatabase } from "../../db/bootstrap.js";
 import { createDatabaseClient, pingDatabase } from "../../db/client.js";
 import { runMigrations } from "../../db/migrator.js";
+import { setupGraphify } from "../../integrations/graphify.js";
+import { writeProjectMcpConfig } from "../../integrations/project-mcp.js";
+import { installWorkflowRules } from "../../templates/install.js";
 import { installClaudeEntry } from "./claude-desktop.js";
 import { installCodexEntry } from "./codex.js";
 import {
@@ -20,6 +23,8 @@ export type UseCommandOptions = {
   postgresUrl?: string;
   skipClaude?: boolean;
   skipCodex?: boolean;
+  graphify?: boolean;
+  useDocker?: boolean;
 };
 
 function bail(): never {
@@ -64,6 +69,14 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
     const folderName = basename(process.cwd());
     const namespace = sanitizeNamespace(options.namespace ?? folderName);
     await initProjectScaffold();
+    const graphifyEnabled =
+      options.graphify ??
+      unwrap(
+        await confirm({
+          message: "Set up Graphify for richer architecture context?",
+          initialValue: true,
+        }),
+      );
     note(
       `Project folder: ${pc.bold(process.cwd())}\nNamespace:      ${pc.bold(namespace)}`,
       "codebuddy use",
@@ -72,7 +85,7 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
     const stored = await readGlobalConfig();
 
     // ── Hugging Face token ──────────────────────────────────────────
-    let hfToken: string;
+    let hfToken: string | undefined;
     if (process.env.HF_TOKEN) {
       hfToken = process.env.HF_TOKEN;
       log.info("Using HF_TOKEN from environment.");
@@ -82,10 +95,11 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
     } else {
       hfToken = unwrap(
         await password({
-          message: "Hugging Face token (saved once, reused for every project)",
-          validate: (value) => (value && value.length > 0 ? undefined : "HF_TOKEN is required."),
+          message: "Hugging Face token (optional; press Enter for local-only mode)",
         }),
       );
+      if (!hfToken)
+        log.info("No Hugging Face token supplied; local file context remains available.");
     }
 
     // ── Postgres URL ────────────────────────────────────────────────
@@ -103,8 +117,9 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
     const dbSpinner = spinner();
     dbSpinner.start("Checking Postgres");
     let connected = await pingOnce(databaseUrl);
+    if (connected) dbSpinner.stop("Local Postgres reachable.");
 
-    if (!connected && databaseUrl === DEFAULT_DB_URL) {
+    if (!connected && databaseUrl === DEFAULT_DB_URL && options.useDocker) {
       dbSpinner.stop("Postgres unreachable on the default local URL.");
       const startDocker = unwrap(
         await confirm({
@@ -144,14 +159,12 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
           composeSpinner.stop(`docker compose failed: ${(error as Error).message}`);
         }
       }
-    } else {
+    } else if (!connected) {
       dbSpinner.stop(connected ? "Postgres reachable." : "Postgres unreachable at this URL.");
-      if (!connected) {
-        log.warn(
-          "This is not the bundled URL — start your Postgres manually or pass --postgres-url.",
-        );
-        bail();
-      }
+      log.warn(
+        "Local Postgres is required. Start it, set DATABASE_URL, or pass --postgres-url. Docker is opt-in with `codebuddy use --docker`.",
+      );
+      bail();
     }
 
     if (!connected) bail();
@@ -175,10 +188,34 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
 
     // ── Persist defaults so the next project is even faster ─────────
     await mergeGlobalConfig({
-      hfToken,
+      ...(hfToken ? { hfToken } : {}),
       databaseUrl,
       installPath: process.argv[1] ?? undefined,
     });
+
+    const existingConfig = await readConfigFile();
+    const graphifySetup = graphifyEnabled
+      ? await setupGraphify({ repositoryRoot: process.cwd() })
+      : null;
+    const graphifyConfigured = graphifySetup?.available ?? false;
+    await writeConfigFile({
+      ...existingConfig,
+      postgresUrl: databaseUrl,
+      namespace,
+      provider: { type: "huggingface", ...(hfToken ? { apiKey: hfToken } : {}) },
+      tokenBudget: existingConfig.tokenBudget ?? 4000,
+      graphify: { enabled: graphifyConfigured, graphPath: "graphify-out/graph.json" },
+    });
+
+    const graphifyMessage =
+      graphifySetup?.message ?? "Graphify disabled; CodeBuddy MCP remains available.";
+    await writeProjectMcpConfig({
+      repositoryRoot: process.cwd(),
+      namespace,
+      graphify: graphifyConfigured,
+    });
+    await installWorkflowRules({ client: "claude", projectRoot: process.cwd() });
+    await installWorkflowRules({ client: "codex", projectRoot: process.cwd() });
 
     // ── Wire Claude Desktop unless suppressed ───────────────────────
     if (!options.skipClaude) {
@@ -218,10 +255,13 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
       [
         `${pc.green("✓")} CodeBuddy is ready for ${pc.bold(folderName)}.`,
         `${pc.green("✓")} Scaffolded ${pc.cyan(".codebuddy/policies.yaml")} for project-specific guardrails.`,
+        `${pc.green("✓")} ${graphifyMessage}`,
+        `${pc.green("✓")} Added agent workflow instructions to ${pc.cyan("CLAUDE.md")} and ${pc.cyan("AGENTS.md")}.`,
         ``,
         `Next:`,
         `  1. Restart Claude Desktop and Codex.`,
-        `  2. Ask Claude or Codex to "remember" or "recall" — it will use the ${pc.cyan(`codebuddy-${namespace}`)} tools automatically.`,
+        `  2. Ask Claude or Codex to use the ${pc.cyan("context_pack")} tool for each coding task.`,
+        `  3. If Graphify is enabled, run ${pc.cyan("/graphify .")} once in your agent to build the local graph.`,
         `  3. Run ${pc.cyan("codebuddy doctor")} or ${pc.cyan("codebuddy db doctor")} if you want a full health check.`,
         ``,
         `Manage:`,

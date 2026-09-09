@@ -55,10 +55,19 @@ export function createCli(): Command {
     .option("--postgres-url <url>", "Postgres URL to use for this project.")
     .option("--skip-claude", "Do not register with Claude Desktop.")
     .option("--skip-codex", "Do not register with Codex.")
+    .option("--graphify", "Enable Graphify setup without prompting.")
+    .option("--no-graphify", "Skip Graphify setup without prompting.")
+    .option("--docker", "Opt in to starting CodeBuddy's bundled Postgres container.")
     .action(
       async (
         namespace: string | undefined,
-        opts: { postgresUrl?: string; skipClaude?: boolean; skipCodex?: boolean },
+        opts: {
+          postgresUrl?: string;
+          skipClaude?: boolean;
+          skipCodex?: boolean;
+          graphify?: boolean;
+          docker?: boolean;
+        },
       ) => {
         await runSafely(async () => {
           await runUseCommand({
@@ -66,6 +75,8 @@ export function createCli(): Command {
             ...(opts.postgresUrl !== undefined ? { postgresUrl: opts.postgresUrl } : {}),
             ...(opts.skipClaude !== undefined ? { skipClaude: opts.skipClaude } : {}),
             ...(opts.skipCodex !== undefined ? { skipCodex: opts.skipCodex } : {}),
+            ...(opts.graphify !== undefined ? { graphify: opts.graphify } : {}),
+            ...(opts.docker !== undefined ? { useDocker: opts.docker } : {}),
           });
         });
       },
@@ -442,6 +453,10 @@ export function createCli(): Command {
   registerHooksCommands(program, runSafely);
   registerGitHubCommands(program, runSafely);
   registerSymbolsCommand(program, runSafely);
+
+  program.action(async () => {
+    await runSafely(() => runUseCommand());
+  });
 
   return program;
 }

@@ -16,6 +16,12 @@ export const codeBuddyConfigSchema = z.object({
     .regex(/^[a-zA-Z0-9_.:-]+$/, "namespace must match [a-zA-Z0-9_.:-]+"),
   projectRoot: z.string().min(1).optional(),
   tokenBudget: z.number().int().positive().max(1_000_000).optional(),
+  graphify: z
+    .object({
+      enabled: z.boolean(),
+      graphPath: z.string().min(1).optional(),
+    })
+    .optional(),
   worker: z
     .object({
       pollIntervalMs: z.number().int().min(50).max(60_000).optional(),
