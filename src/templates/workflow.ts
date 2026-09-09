@@ -3,8 +3,8 @@
  * rules that make CodeBuddy's automatic context flow reliable in Claude Code and
  * Codex: they say exactly which MCP tool to call, when, and what to do when a
  * tool or service is unavailable. The text references only tools that actually
- * ship (04.2–04.6): context_bootstrap, context_before_edit, context_after_turn,
- * code_suggestions.
+ * ship (04.2–04.6): context_pack, context_bootstrap, context_before_edit,
+ * context_after_turn, code_suggestions.
  *
  * Templates are installed into a client's Markdown rules file inside a clearly
  * delimited managed block (see `install.ts`) so updates are idempotent and the
@@ -26,19 +26,19 @@ const WORKFLOW_BODY = [
   "",
   "## At the start of a substantive coding turn",
   "",
-  "1. Call `context_bootstrap` to load project identity, the active plan and plan",
-  "   policy, incident hotspots, and a compact architecture summary.",
-  "2. If the task may change files, call `context_before_edit` with the planned",
-  "   `paths` (or a `planId`, or `useGit: true`). Read the returned plan, matching",
-  "   policy rules, incident memory, risk assessment, and import neighbours before",
-  "   deciding what to edit.",
+  "1. Call `context_pack` with the user's task and a sensible token budget (start",
+  "   with 4000). It automatically finds relevant files and returns bounded symbols,",
+  "   plan, policy, incidents, risks, architecture neighbours, and team facts.",
+  "2. Use `context_bootstrap` only when you need broad project orientation beyond",
+  "   the task pack. Use `context_before_edit` when you already have exact paths",
+  "   or a plan and need a narrower follow-up.",
   "",
   "## While implementing",
   "",
   "- Prefer the smallest sufficient set of edits; preserve existing behavior.",
   "- Honor risk warnings and policy rules for the files you touch; call out risk",
   "  before editing sensitive areas.",
-  "- Do not re-request broad context if the bootstrap answer already suffices.",
+  "- Do not re-request broad context if the task pack already suffices.",
   "",
   "## Before finalizing",
   "",

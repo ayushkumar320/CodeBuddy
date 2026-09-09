@@ -18,10 +18,11 @@ afterEach(async () => {
 });
 
 describe("renderWorkflowTemplate", () => {
-  it("references all four Phase 04 tools and degraded mode for every client", () => {
+  it("references the agent workflow tools and degraded mode for every client", () => {
     for (const client of WORKFLOW_CLIENTS) {
       const text = renderWorkflowTemplate(client);
       for (const tool of [
+        "context_pack",
         "context_bootstrap",
         "context_before_edit",
         "context_after_turn",

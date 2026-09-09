@@ -1,19 +1,15 @@
 # Claude Code And Codex Setup
 
-This guide shows how to use CodeBuddy with Claude Code and Codex using a local Docker PostgreSQL database.
+This guide shows how to use CodeBuddy with Claude Code and Codex using the
+project's local PostgreSQL database and optional local Graphify architecture
+context.
 
 ## Requirements
 
 - Node.js 20+
-- Docker Desktop or Docker Engine
+- PostgreSQL 16 + pgvector
 - npm
-- Hugging Face token
-
-Create a Hugging Face token at:
-
-```text
-https://huggingface.co/settings/tokens
-```
+- Optional: Docker, if you explicitly choose the bundled database fallback
 
 ## Install CodeBuddy
 
@@ -142,15 +138,40 @@ in committed memory files.
 
 ## Initialize CodeBuddy
 
+The shortest path is to open a project folder and run:
+
+```bash
+codebuddy
+```
+
+The setup asks whether to enable Graphify. Choose **yes** to install/detect
+Graphify, register both local MCP servers in `.mcp.json`, and enable Graphify
+architecture input. Choose **no** to register only CodeBuddy; its own local
+index and MCP context tools work the same way.
+
+Both choices also create `.codebuddy/config.json`, validate the local Postgres
+connection, apply migrations, install `CLAUDE.md` and `AGENTS.md` workflow
+instructions, and register Claude/Codex MCP entries. Credentials stay in the
+private CodeBuddy config, not in `.mcp.json`.
+
+When Graphify is enabled, ask the connected agent to run:
+
+```text
+/graphify .
+```
+
+That creates `graphify-out/graph.json`; CodeBuddy consumes it automatically for
+architecture context.
+
 Run the setup wizard:
 
 ```bash
 codebuddy init
 ```
 
-The wizard asks for:
+The legacy wizard asks for:
 
-- Hugging Face token
+- Optional Hugging Face token
 - PostgreSQL URL
 - default namespace
 - whether to register with Claude Desktop
@@ -192,10 +213,12 @@ This command:
 
 - derives the namespace from the project folder
 - reuses saved Hugging Face and database settings
-- starts Docker PostgreSQL when using the default local database URL
+- validates local PostgreSQL; Docker is only used with `codebuddy use --docker`
 - applies migrations
 - registers Claude Desktop
 - registers Codex
+- asks whether to enable Graphify and writes the project MCP config
+- installs managed `CLAUDE.md` and `AGENTS.md` instructions
 
 Use a custom namespace:
 

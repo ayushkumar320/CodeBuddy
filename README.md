@@ -115,7 +115,8 @@ Two design rules run through everything:
 ```bash
 npm install -g @ayushkumar320/codebuddy
 cd ~/Projects/your-project
-codebuddy use your-project        # scaffolds .codebuddy/, starts Docker DB, migrates, wires Claude/Codex
+codebuddy                         # first-run setup for the open folder
+codebuddy use your-project        # repeat setup for a named namespace
 codebuddy index                   # build the background index
 codebuddy rules install --client claude   # teach the agent when to call the tools
 ```
@@ -129,6 +130,22 @@ npx @ayushkumar320/codebuddy init --non-interactive --github-action
 This creates the local `.codebuddy/` scaffold and an idempotent
 `.github/workflows/codebuddy.yml` workflow. Commit the workflow to start
 receiving a CodeBuddy report on every pull request.
+
+On the first run, `codebuddy` also asks whether to enable Graphify:
+
+- **Yes:** it installs/detects Graphify, registers its local MCP server in the
+  project `.mcp.json`, enables Graphify architecture input for CodeBuddy, and
+  tells you to run `/graphify .` in your coding agent to build the graph.
+- **No:** it registers only CodeBuddy. The MCP context workflow is unchanged;
+  CodeBuddy uses its own local architecture index.
+
+In both cases it writes the CodeBuddy and Graphify MCP entries without putting
+database credentials in `.mcp.json`, and adds managed instructions to
+`CLAUDE.md` and `AGENTS.md` so the agent knows to use `context_pack`.
+
+Graphify runs locally. Its current installer is `uv tool install graphifyy`
+(with pipx/pip alternatives), and its assistant command produces
+`graphify-out/graph.json`, which CodeBuddy consumes automatically when enabled.
 
 ### No-database path (try the context engine in 30 seconds)
 
@@ -146,7 +163,7 @@ codebuddy suggest --git
 ### Bring-your-own vs. bundled Postgres
 
 ```bash
-# Bundled pgvector container (needs Docker)
+# Optional bundled pgvector container (needs Docker; local Postgres is the default)
 codebuddy postgres up
 export DATABASE_URL="postgres://codebuddy:codebuddy@localhost:5432/codebuddy"
 codebuddy migrate
