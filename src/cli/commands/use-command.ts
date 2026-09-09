@@ -8,6 +8,7 @@ import { createDatabaseClient, pingDatabase } from "../../db/client.js";
 import { runMigrations } from "../../db/migrator.js";
 import { setupGraphify } from "../../integrations/graphify.js";
 import { writeProjectMcpConfig } from "../../integrations/project-mcp.js";
+import { installWorkflowRules } from "../../templates/install.js";
 import { installClaudeEntry } from "./claude-desktop.js";
 import { installCodexEntry } from "./codex.js";
 import {
@@ -116,6 +117,7 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
     const dbSpinner = spinner();
     dbSpinner.start("Checking Postgres");
     let connected = await pingOnce(databaseUrl);
+    if (connected) dbSpinner.stop("Local Postgres reachable.");
 
     if (!connected && databaseUrl === DEFAULT_DB_URL && options.useDocker) {
       dbSpinner.stop("Postgres unreachable on the default local URL.");
@@ -212,6 +214,8 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
       namespace,
       graphify: graphifyConfigured,
     });
+    await installWorkflowRules({ client: "claude", projectRoot: process.cwd() });
+    await installWorkflowRules({ client: "codex", projectRoot: process.cwd() });
 
     // ── Wire Claude Desktop unless suppressed ───────────────────────
     if (!options.skipClaude) {
@@ -252,6 +256,7 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
         `${pc.green("✓")} CodeBuddy is ready for ${pc.bold(folderName)}.`,
         `${pc.green("✓")} Scaffolded ${pc.cyan(".codebuddy/policies.yaml")} for project-specific guardrails.`,
         `${pc.green("✓")} ${graphifyMessage}`,
+        `${pc.green("✓")} Added agent workflow instructions to ${pc.cyan("CLAUDE.md")} and ${pc.cyan("AGENTS.md")}.`,
         ``,
         `Next:`,
         `  1. Restart Claude Desktop and Codex.`,
