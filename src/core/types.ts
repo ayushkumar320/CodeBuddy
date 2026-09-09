@@ -17,6 +17,7 @@ export type CodeBuddyConfig = {
   namespace: string;
   projectRoot?: string;
   tokenBudget?: number;
+  graphify?: { enabled: boolean; graphPath?: string | undefined };
   worker?: WorkerConfig;
 };
 

@@ -60,6 +60,12 @@ const fileSchema = z.object({
       policy: z.enum(PLAN_POLICIES).default("suggest"),
     })
     .optional(),
+  graphify: z
+    .object({
+      enabled: z.boolean(),
+      graphPath: z.string().min(1).optional(),
+    })
+    .optional(),
 });
 
 export type CodeBuddyFileConfig = z.infer<typeof fileSchema>;
@@ -145,6 +151,18 @@ export async function initConfigFile(
   }
 }
 
+/** Persist a complete project config without changing its private permissions. */
+export async function writeConfigFile(
+  config: CodeBuddyFileConfig,
+  cwd = process.cwd(),
+): Promise<{ path: string }> {
+  const path = configPath(cwd);
+  await initProjectScaffold(cwd);
+  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  await chmod(path, 0o600);
+  return { path };
+}
+
 export async function readConfigFile(cwd = process.cwd()): Promise<CodeBuddyFileConfig> {
   const path = configPath(cwd);
   try {
@@ -180,7 +198,8 @@ export async function resolveNamespaceFrom(cwd = process.cwd()): Promise<string>
 }
 
 export async function loadRuntimeConfig(cwd = process.cwd()): Promise<CodeBuddyConfig> {
-  const file = await readConfigFile(cwd);
+  const projectRoot = process.env.CODEBUDDY_PROJECT_ROOT ?? cwd;
+  const file = await readConfigFile(projectRoot);
   const postgresUrl = process.env.DATABASE_URL ?? file.postgresUrl;
   if (!postgresUrl) {
     throw new Error("DATABASE_URL or .codebuddy/config.json postgresUrl is required.");
@@ -188,13 +207,15 @@ export async function loadRuntimeConfig(cwd = process.cwd()): Promise<CodeBuddyC
   const hfToken = process.env.HF_TOKEN ?? file.provider?.apiKey;
   return {
     postgresUrl,
-    namespace: process.env.CODEBUDDY_NAMESPACE ?? file.namespace ?? defaultNamespaceForCwd(cwd),
-    projectRoot: process.env.CODEBUDDY_PROJECT_ROOT ?? cwd,
+    namespace:
+      process.env.CODEBUDDY_NAMESPACE ?? file.namespace ?? defaultNamespaceForCwd(projectRoot),
+    projectRoot,
     provider: {
       type: "huggingface",
       ...(hfToken ? { apiKey: hfToken } : {}),
     },
     ...(file.tokenBudget ? { tokenBudget: file.tokenBudget } : {}),
+    ...(file.graphify ? { graphify: file.graphify } : {}),
   };
 }
 
