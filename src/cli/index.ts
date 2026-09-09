@@ -19,6 +19,7 @@ import {
 } from "./commands/claude-desktop.js";
 import { installCodexEntry, listCodexEntries, removeCodexEntry } from "./commands/codex.js";
 import { registerContextCommands } from "./commands/context.js";
+import { registerEvalCommand } from "./commands/eval.js";
 import { registerGitHubCommands } from "./commands/github.js";
 import { registerHooksCommands } from "./commands/hooks.js";
 import { registerIndexCommands } from "./commands/indexing.js";
@@ -430,6 +431,7 @@ export function createCli(): Command {
   registerRiskCommands(program, runSafely);
   registerMapCommands(program, runSafely);
   registerContextCommands(program, runSafely);
+  registerEvalCommand(program, runSafely);
   registerIndexCommands(program, runSafely);
   registerMemoryCommands(program, runSafely);
   registerSavingsCommand(program, runSafely);

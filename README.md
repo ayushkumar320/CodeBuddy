@@ -334,12 +334,18 @@ codebuddy change --json       # stable output for CI or another agent
 
 codebuddy change verify     # detects and runs npm/pnpm/yarn/bun test
 codebuddy change verify --command "npm run test:unit" --timeout 300000
+
+codebuddy eval             # run the committed readiness evaluation cases
 ```
 
 The status is `ready`, `review`, `blocked`, or `no_changes`. The command is
 read-only and is designed to run before a commit or as an agent checkpoint.
 `change verify` returns a non-zero exit code when tests fail, time out, or no
 test command can be found, and supports `--json` for CI integration.
+
+The evaluation dataset lives under `evals/` and is intentionally small,
+readable, and versioned. Extend it when changing risk thresholds or adding a
+new signal so product claims remain reproducible.
 
 ### 11. Client workflow templates
 
