@@ -321,10 +321,15 @@ codebuddy change --json       # stable output for CI or another agent
 # [review ] change report
 #   highest risk: 70
 #   verification: 1 test file(s) changed; 0 code file(s) without a discovered test
+
+codebuddy change verify     # detects and runs npm/pnpm/yarn/bun test
+codebuddy change verify --command "npm run test:unit" --timeout 300000
 ```
 
 The status is `ready`, `review`, `blocked`, or `no_changes`. The command is
 read-only and is designed to run before a commit or as an agent checkpoint.
+`change verify` returns a non-zero exit code when tests fail, time out, or no
+test command can be found, and supports `--json` for CI integration.
 
 ### 11. Client workflow templates
 

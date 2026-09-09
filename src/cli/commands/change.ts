@@ -1,28 +1,25 @@
 import type { Command } from "commander";
 import pc from "picocolors";
-import { buildChangeReport } from "../../change/engine.js";
-import type { ChangeReport, ChangeStatus } from "../../change/types.js";
+import { buildChangeReport, verifyChange } from "../../change/engine.js";
+import type { ChangeReport, ChangeStatus, ChangeVerificationResult } from "../../change/types.js";
 import { resolveNamespaceFrom } from "../../core/config-file.js";
 
 export function registerChangeCommand(
   program: Command,
   runSafely: (fn: () => Promise<void>) => Promise<void>,
 ): void {
-  program
-    .command("change")
+  const change = program.command("change").description("Assess and verify the current change.");
+
+  change
+    .command("report", { isDefault: true })
+    .description("Report whether the current change is ready, needs review, or is blocked.")
     .option("--paths <paths>", "Comma-separated repo-relative paths to review.")
     .option("--plan <id>", "Review the files listed in a plan.")
     .option("--no-git", "Do not include the current Git change set.")
     .option("--json", "Print machine-readable JSON.")
-    .description("Report whether the current change is ready, needs review, or is blocked.")
-    .action(async (opts: { paths?: string; plan?: string; git?: boolean; json?: boolean }) => {
+    .action(async (opts: ChangeOptions) => {
       await runSafely(async () => {
-        const report = await buildChangeReport({
-          namespace: await resolveNamespaceFrom(),
-          ...(opts.paths ? { paths: parsePaths(opts.paths) } : {}),
-          ...(opts.plan ? { planId: opts.plan } : {}),
-          ...(opts.git !== undefined ? { useGit: opts.git } : {}),
-        });
+        const report = await buildChangeReport(toInput(opts, await resolveNamespaceFrom()));
         if (opts.json) {
           console.log(JSON.stringify(report, null, 2));
           return;
@@ -30,6 +27,52 @@ export function registerChangeCommand(
         printReport(report);
       });
     });
+
+  change
+    .command("verify")
+    .description("Run the detected test command and report whether the change is verified.")
+    .option("--paths <paths>", "Comma-separated repo-relative paths to review.")
+    .option("--plan <id>", "Review the files listed in a plan.")
+    .option("--no-git", "Do not include the current Git change set.")
+    .option("--command <command>", "Override the detected test command.")
+    .option("--timeout <ms>", "Stop the test command after this many milliseconds.", Number)
+    .option("--json", "Print machine-readable JSON.")
+    .action(async (opts: VerifyOptions) => {
+      await runSafely(async () => {
+        const result = await verifyChange({
+          ...toInput(opts, await resolveNamespaceFrom()),
+          ...(opts.command ? { command: opts.command } : {}),
+          ...(opts.timeout !== undefined ? { timeoutMs: opts.timeout } : {}),
+        });
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          printVerification(result);
+        }
+        if (result.test.status !== "passed") process.exitCode = 1;
+      });
+    });
+}
+
+type ChangeOptions = {
+  paths?: string;
+  plan?: string;
+  git?: boolean;
+  json?: boolean;
+};
+
+type VerifyOptions = ChangeOptions & {
+  command?: string;
+  timeout?: number;
+};
+
+function toInput(opts: ChangeOptions, namespace: string) {
+  return {
+    namespace,
+    ...(opts.paths ? { paths: parsePaths(opts.paths) } : {}),
+    ...(opts.plan ? { planId: opts.plan } : {}),
+    ...(opts.git !== undefined ? { useGit: opts.git } : {}),
+  };
 }
 
 function parsePaths(value: string): string[] {
@@ -73,6 +116,17 @@ function printReport(report: ChangeReport): void {
   }
 }
 
+function printVerification(result: ChangeVerificationResult): void {
+  printReport(result.report);
+  console.log(`\n${testBadge(result.test.status)} verification`);
+  console.log(`  command: ${result.test.command ?? "none detected"}`);
+  if (result.test.durationMs > 0) console.log(`  duration: ${result.test.durationMs}ms`);
+  if (result.test.output) {
+    console.log("  output:");
+    for (const line of result.test.output.split("\n")) console.log(`    ${line}`);
+  }
+}
+
 function statusBadge(status: ChangeStatus): string {
   if (status === "blocked") return pc.red("[blocked]");
   if (status === "review") return pc.yellow("[review ]");
@@ -84,4 +138,11 @@ function severityBadge(severity: string): string {
   if (severity === "high") return pc.red("[high]");
   if (severity === "medium") return pc.yellow("[med ]");
   return pc.dim(`[${severity.padEnd(5)}]`);
+}
+
+function testBadge(status: ChangeVerificationResult["test"]["status"]): string {
+  if (status === "passed") return pc.green("[passed ]");
+  if (status === "timed_out") return pc.red("[timeout]");
+  if (status === "failed") return pc.red("[failed ]");
+  return pc.yellow("[not run]");
 }
