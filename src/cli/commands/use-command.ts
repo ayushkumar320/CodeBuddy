@@ -119,50 +119,56 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
     let connected = await pingOnce(databaseUrl);
     if (connected) dbSpinner.stop("Local Postgres reachable.");
 
-    if (!connected && databaseUrl === DEFAULT_DB_URL && options.useDocker) {
+    if (!connected && databaseUrl === DEFAULT_DB_URL) {
       dbSpinner.stop("Postgres unreachable on the default local URL.");
-      const startDocker = unwrap(
-        await confirm({
-          message: "Start the bundled Postgres container with Docker now?",
-          initialValue: true,
-        }),
-      );
-      if (startDocker) {
-        if (!(await isDockerDaemonRunning())) {
-          const dockerSpinner = spinner();
-          dockerSpinner.start("Starting Docker Desktop");
-          await tryStartDockerDesktop();
-          const ready = await waitForDockerDaemon(60_000);
-          if (!ready) {
-            dockerSpinner.stop("Docker daemon did not start in 60s. Aborting.");
-            bail();
-          }
-          dockerSpinner.stop("Docker daemon is up.");
+    }
+
+    const shouldUseDocker =
+      !connected &&
+      databaseUrl === DEFAULT_DB_URL &&
+      (options.useDocker ??
+        unwrap(
+          await confirm({
+            message: "Postgres is unavailable. Start the bundled Docker database now?",
+            initialValue: true,
+          }),
+        ));
+
+    if (shouldUseDocker) {
+      if (!(await isDockerDaemonRunning())) {
+        const dockerSpinner = spinner();
+        dockerSpinner.start("Starting Docker Desktop");
+        await tryStartDockerDesktop();
+        const ready = await waitForDockerDaemon(60_000);
+        if (!ready) {
+          dockerSpinner.stop("Docker daemon did not start in 60s. Aborting.");
+          bail();
         }
-        const composeSpinner = spinner();
-        composeSpinner.start("docker compose up -d");
-        try {
-          const result = await postgresUp();
-          if (result.code === 0) {
-            composeSpinner.stop("Postgres container started.");
-            for (let attempt = 0; attempt < 12 && !connected; attempt++) {
-              await new Promise((resolve) => setTimeout(resolve, 500));
-              connected = await pingOnce(databaseUrl);
-            }
-            if (!connected) {
-              log.warn("Container running but Postgres did not accept connections in time.");
-            }
-          } else {
-            composeSpinner.stop(`docker compose failed: ${result.stderr || result.stdout}`);
+        dockerSpinner.stop("Docker daemon is up.");
+      }
+      const composeSpinner = spinner();
+      composeSpinner.start("docker compose up -d");
+      try {
+        const result = await postgresUp();
+        if (result.code === 0) {
+          composeSpinner.stop("Postgres container started.");
+          for (let attempt = 0; attempt < 12 && !connected; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            connected = await pingOnce(databaseUrl);
           }
-        } catch (error) {
-          composeSpinner.stop(`docker compose failed: ${(error as Error).message}`);
+          if (!connected) {
+            log.warn("Container running but Postgres did not accept connections in time.");
+          }
+        } else {
+          composeSpinner.stop(`docker compose failed: ${result.stderr || result.stdout}`);
         }
+      } catch (error) {
+        composeSpinner.stop(`docker compose failed: ${(error as Error).message}`);
       }
     } else if (!connected) {
       dbSpinner.stop(connected ? "Postgres reachable." : "Postgres unreachable at this URL.");
       log.warn(
-        "Local Postgres is required. Start it, set DATABASE_URL, or pass --postgres-url. Docker is opt-in with `codebuddy use --docker`.",
+        "Local Postgres is required. Start it, set DATABASE_URL, pass --postgres-url, or allow the bundled Docker database.",
       );
       bail();
     }
