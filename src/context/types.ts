@@ -76,6 +76,12 @@ export type ModuleNeighbours = {
   path: string;
   dependsOn: string[];
   dependedOnBy: string[];
+  /**
+   * Symbols this file uses from each dependency, when the architecture source
+   * knows them (Graphify does; the regex import map does not). Lets an agent see
+   * what is actually used without opening the dependency.
+   */
+  usesSymbols?: Record<string, string[]>;
 };
 
 /** A target file's public API as compact signatures (Roadmap N.3). */

@@ -60,7 +60,12 @@ describe("loadGraphifyMap", () => {
       "data/projects.ts",
     ]);
     expect(graph.edges).toEqual([
-      { from: "components/sections/Projects.tsx", to: "data/projects.ts", kind: "import" },
+      {
+        from: "components/sections/Projects.tsx",
+        to: "data/projects.ts",
+        kind: "import",
+        symbols: ["projects"],
+      },
     ]);
     expect(graph.modules[0]?.imports).toEqual(["data/projects.ts"]);
   });
@@ -140,5 +145,56 @@ describe("loadGraphifyMap", () => {
     );
     const graph = await loadGraphifyMap(join(root, "graph.json"), root);
     expect(graph.edges).toEqual([{ from: "src/a.ts", to: "src/b.ts", kind: "import" }]);
+  });
+
+  it("swaps endpoints for relations phrased from the dependency's side", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codebuddy-graphify-"));
+    roots.push(root);
+    await writeFile(
+      join(root, "graph.json"),
+      JSON.stringify({
+        nodes: [
+          { id: "a", label: "renderPage()", source_file: "src/a.ts" },
+          { id: "b", label: "helper()", source_file: "src/b.ts" },
+        ],
+        // "b is imported by a": the dependency is the link's source.
+        links: [{ source: "b", target: "a", relation: "imported_by" }],
+      }),
+    );
+    const graph = await loadGraphifyMap(join(root, "graph.json"), root);
+    expect(graph.edges).toEqual([
+      { from: "src/a.ts", to: "src/b.ts", kind: "import", symbols: ["helper()"] },
+    ]);
+  });
+
+  it("collects the symbol names a file uses from each dependency", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codebuddy-graphify-"));
+    roots.push(root);
+    await writeFile(
+      join(root, "graph.json"),
+      JSON.stringify({
+        nodes: [
+          { id: "page", label: "Page()", source_file: "src/page.tsx" },
+          { id: "projects", label: "projects", source_file: "data/projects.ts" },
+          { id: "project_type", label: "Project", source_file: "data/projects.ts" },
+          // The node standing for the file itself contributes no symbol name.
+          { id: "projects_file", label: "data/projects.ts", source_file: "data/projects.ts" },
+        ],
+        links: [
+          { source: "page", target: "projects", relation: "imports_from" },
+          { source: "page", target: "project_type", relation: "imports_from" },
+          { source: "page", target: "projects_file", relation: "imports" },
+        ],
+      }),
+    );
+    const graph = await loadGraphifyMap(join(root, "graph.json"), root);
+    expect(graph.edges).toEqual([
+      {
+        from: "src/page.tsx",
+        to: "data/projects.ts",
+        kind: "import",
+        symbols: ["Project", "projects"],
+      },
+    ]);
   });
 });

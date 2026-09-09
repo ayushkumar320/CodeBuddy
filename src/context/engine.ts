@@ -451,10 +451,18 @@ function computeNeighbours(map: ArchitectureMap, paths: string[]): ModuleNeighbo
       ...new Set(map.edges.filter((edge) => edge.to === path).map((edge) => edge.from)),
     ].slice(0, LIMITS.neighbourEdges);
     if (dependsOn.length === 0 && dependedOnBy.length === 0) continue;
+    const usesSymbols: Record<string, string[]> = {};
+    for (const dependency of dependsOn) {
+      const symbols = map.edges.find(
+        (edge) => edge.from === path && edge.to === dependency,
+      )?.symbols;
+      if (symbols?.length) usesSymbols[dependency] = symbols;
+    }
     result.push({
       path,
       dependsOn,
       dependedOnBy,
+      ...(Object.keys(usesSymbols).length > 0 ? { usesSymbols } : {}),
     });
   }
   return result;

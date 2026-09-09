@@ -26,6 +26,10 @@ export type ChangeVerification = {
 export type ChangeArchitecture = {
   dependentsByPath: Record<string, number>;
   totalDependents: number;
+  /** Where the edges came from: an explicit Graphify graph or the import scan. */
+  source: "graphify" | "imports";
+  /** Why Graphify was not used, when one was requested but could not be read. */
+  warning?: string;
 };
 
 export type ChangeReport = {

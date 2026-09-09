@@ -8,6 +8,11 @@ export type ModuleEdge = {
   from: string;
   to: string;
   kind: "import" | "dynamic_import";
+  /**
+   * Names the dependant uses from the dependency, when the source graph knows
+   * them. The regex import map does not, so this is absent there.
+   */
+  symbols?: string[];
 };
 
 export type ArchitectureMap = {

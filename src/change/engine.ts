@@ -6,6 +6,7 @@ import { PlanFileStore, type PlanSpec } from "../core/plan-file-store.js";
 import { PlanLifecycle } from "../core/plan-lifecycle.js";
 import { loadGraphifyMap } from "../map/graphify.js";
 import { buildArchitectureMap } from "../map/indexer.js";
+import type { ArchitectureMap } from "../map/types.js";
 import { assessRisk, resolveRiskPaths } from "../risk/service.js";
 import type { Assessment } from "../risk/types.js";
 import { generateSuggestions } from "../suggest/engine.js";
@@ -55,7 +56,7 @@ export async function buildChangeReport(input: ChangeReportInput): Promise<Chang
         });
 
   const planStore = new PlanFileStore(repositoryRoot);
-  const [risk, suggestions, plan, map] = await Promise.all([
+  const [risk, suggestions, plan, architecture] = await Promise.all([
     paths.length === 0
       ? Promise.resolve(emptyAssessment())
       : assessRisk({
@@ -70,12 +71,13 @@ export async function buildChangeReport(input: ChangeReportInput): Promise<Chang
       : generateSuggestions({ repositoryRoot, namespace: input.namespace, paths }),
     resolveRelevantPlan(planStore, input.namespace, input.planId),
     input.graphifyPath
-      ? loadGraphifyMap(input.graphifyPath, repositoryRoot)
-      : buildArchitectureMap(repositoryRoot),
+      ? loadGraphifyMapOrFallback(input.graphifyPath, repositoryRoot)
+      : buildArchitectureMap(repositoryRoot).then((map) => ({ map, warning: null })),
   ]);
 
   const planSummary = summarizePlan(plan, paths);
   const verification = buildVerification(paths, planSummary, suggestions);
+  const { map, warning: graphifyWarning } = architecture;
   const dependentsByPath = countDependents(map.edges, paths);
   const highestScore = risk.items.reduce((highest, item) => Math.max(highest, item.score), 0);
   const status = getStatus(paths, highestScore, suggestions, verification);
@@ -88,6 +90,8 @@ export async function buildChangeReport(input: ChangeReportInput): Promise<Chang
     architecture: {
       dependentsByPath,
       totalDependents: Object.values(dependentsByPath).reduce((sum, count) => sum + count, 0),
+      source: input.graphifyPath && !graphifyWarning ? "graphify" : "imports",
+      ...(graphifyWarning ? { warning: graphifyWarning } : {}),
     },
     suggestions: suggestions.suggestions,
     verification,
@@ -225,6 +229,25 @@ function runTestCommand(
       });
     });
   });
+}
+
+/**
+ * An explicit `--graphify <path>` that cannot be read must not sink the whole
+ * report: fall back to the import scan and carry the reason into the report, so
+ * the failure is visible rather than silently swallowed.
+ */
+async function loadGraphifyMapOrFallback(
+  graphifyPath: string,
+  repositoryRoot: string,
+): Promise<{ map: ArchitectureMap; warning: string | null }> {
+  try {
+    return { map: await loadGraphifyMap(graphifyPath, repositoryRoot), warning: null };
+  } catch (error) {
+    return {
+      map: await buildArchitectureMap(repositoryRoot),
+      warning: `Graphify graph unusable, fell back to the import scan: ${(error as Error).message}`,
+    };
+  }
 }
 
 function emptyAssessment(): Assessment {
