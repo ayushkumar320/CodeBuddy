@@ -77,6 +77,21 @@ describe("CLI end-to-end", () => {
     expect(parsed).toHaveProperty("items");
   });
 
+  it("change --json prints a readiness report", async () => {
+    const root = await tempRepo();
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "src", "a.ts"), "export const a = 1;\n");
+
+    const { code, stdout } = await runCli(
+      ["change", "--paths", "src/a.ts", "--no-git", "--json"],
+      root,
+    );
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout) as Record<string, unknown>;
+    expect(parsed).toHaveProperty("status");
+    expect(parsed).toHaveProperty("verification");
+  });
+
   it("rules show prints the workflow template", async () => {
     const root = await tempRepo();
     const { code, stdout } = await runCli(["rules", "show"], root);
