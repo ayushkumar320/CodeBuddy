@@ -139,13 +139,35 @@ On the first run, `codebuddy` also asks whether to enable Graphify:
 - **No:** it registers only CodeBuddy. The MCP context workflow is unchanged;
   CodeBuddy uses its own local architecture index.
 
-In both cases it writes the CodeBuddy and Graphify MCP entries without putting
-database credentials in `.mcp.json`, and adds managed instructions to
-`CLAUDE.md` and `AGENTS.md` so the agent knows to use `context_pack`.
+In both cases it writes the CodeBuddy MCP entry without putting database
+credentials in `.mcp.json`, and adds managed instructions to `CLAUDE.md` and
+`AGENTS.md` so the agent knows to use `context_pack`. The Graphify MCP entry is
+added only when Graphify is enabled.
 
 Graphify runs locally. Its current installer is `uv tool install graphifyy`
 (with pipx/pip alternatives), and its assistant command produces
 `graphify-out/graph.json`, which CodeBuddy consumes automatically when enabled.
+
+### How CodeBuddy helps, in plain English
+
+CodeBuddy is a small context and memory layer between your repository and your
+coding agent. You describe a task once, and CodeBuddy prepares the useful
+project information before Claude or Codex starts editing:
+
+1. It finds the files, functions, tests, rules, previous incidents, and related
+   architecture that matter to the task.
+2. It sends a compact, token-budgeted `context_pack` instead of making the
+   agent repeatedly read the whole repository.
+3. The agent makes the change with more relevant evidence and less guessing.
+4. CodeBuddy can record durable decisions and change outcomes for future tasks.
+5. Pull requests can receive a readiness report covering risk, tests, plan drift,
+   and architecture impact.
+
+The practical result is less repeated reading, lower context cost, fewer
+irrelevant edits, and a project that becomes easier for new agents to
+understand over time. Graphify is optional: it adds a richer local map of how
+the codebase connects, while CodeBuddy's own MCP context workflow works either
+way.
 
 ### No-database path (try the context engine in 30 seconds)
 
