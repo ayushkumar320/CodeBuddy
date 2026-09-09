@@ -29,7 +29,9 @@ truth. Nothing is sent to a hosted CodeBuddy service — there isn't one.
   - [7. Automatic memory capture + review queue](#7-automatic-memory-capture--review-queue)
   - [8. Token savings](#8-token-savings)
   - [9. Read-only suggestions](#9-read-only-suggestions)
-  - [10. Client workflow templates](#10-client-workflow-templates)
+  - [10. Change readiness](#10-change-readiness)
+  - [11. Client workflow templates](#11-client-workflow-templates)
+  - [12. Fully automatic mode (hooks)](#12-fully-automatic-mode-hooks)
 - [How CodeBuddy saves tokens vs. a big knowledge graph](#how-codebuddy-saves-tokens-vs-a-big-knowledge-graph)
 - [MCP tools reference](#mcp-tools-reference)
 - [SDK usage](#sdk-usage)
@@ -306,7 +308,25 @@ codebuddy suggest --paths src/auth/oauth.ts
 Categories: risk · plan divergence · architecture blast radius · incident
 history · missing tests · stale policies. Over MCP: `code_suggestions`.
 
-### 10. Client workflow templates
+### 10. Change readiness
+
+Turn the existing signals into one evidence-backed change report. It combines
+the current diff, active plan, risk, architecture dependents, incident history,
+and test coverage into a single readiness decision.
+
+```bash
+codebuddy change
+codebuddy change --paths src/auth/oauth.ts --no-git
+codebuddy change --json       # stable output for CI or another agent
+# [review ] change report
+#   highest risk: 70
+#   verification: 1 test file(s) changed; 0 code file(s) without a discovered test
+```
+
+The status is `ready`, `review`, `blocked`, or `no_changes`. The command is
+read-only and is designed to run before a commit or as an agent checkpoint.
+
+### 11. Client workflow templates
 
 Teach Claude/Codex *when* to call each tool. Install writes an idempotent
 managed block into `CLAUDE.md` / `AGENTS.md` between clear markers — re-running
@@ -321,7 +341,7 @@ codebuddy rules install --client codex     # → managed block in AGENTS.md
 See [docs/degraded-mode.md](docs/degraded-mode.md) for how the tools fail soft
 (a tool missing, Postgres down, empty retrieval).
 
-### 11. Fully automatic mode (hooks)
+### 12. Fully automatic mode (hooks)
 
 Templates *ask* the agent to call the tools. **Hooks guarantee it** — CodeBuddy
 wires into Claude Code's lifecycle so recall and capture fire deterministically,

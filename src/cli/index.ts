@@ -10,6 +10,7 @@ import { createDatabaseClient } from "../db/client.js";
 import { runMigrations } from "../db/migrator.js";
 import { startMcpServer } from "../mcp/server.js";
 import { VERSION } from "../version.js";
+import { registerChangeCommand } from "./commands/change.js";
 import {
   installClaudeEntry,
   listClaudeEntries,
@@ -414,6 +415,7 @@ export function createCli(): Command {
     });
 
   registerPlanCommands(program, runSafely);
+  registerChangeCommand(program, runSafely);
   registerRiskCommands(program, runSafely);
   registerMapCommands(program, runSafely);
   registerContextCommands(program, runSafely);
