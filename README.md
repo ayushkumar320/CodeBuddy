@@ -120,6 +120,16 @@ codebuddy index                   # build the background index
 codebuddy rules install --client claude   # teach the agent when to call the tools
 ```
 
+For a zero-database setup that also enables PR reports:
+
+```bash
+npx @ayushkumar320/codebuddy init --non-interactive --github-action
+```
+
+This creates the local `.codebuddy/` scaffold and an idempotent
+`.github/workflows/codebuddy.yml` workflow. Commit the workflow to start
+receiving a CodeBuddy report on every pull request.
+
 ### No-database path (try the context engine in 30 seconds)
 
 Everything except semantic recall is file-based, so you can skip Postgres:

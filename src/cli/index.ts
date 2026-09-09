@@ -8,6 +8,7 @@ import { createRuntime, inspectNamespace, listFactsPage, runDoctor } from "../co
 import { bootstrapDatabase } from "../db/bootstrap.js";
 import { createDatabaseClient } from "../db/client.js";
 import { runMigrations } from "../db/migrator.js";
+import { installGitHubWorkflow } from "../integrations/github.js";
 import { startMcpServer } from "../mcp/server.js";
 import { VERSION } from "../version.js";
 import { registerChangeCommand } from "./commands/change.js";
@@ -72,14 +73,23 @@ export function createCli(): Command {
     .command("init")
     .description("Interactive setup: config file, Postgres, migrations, Claude Desktop.")
     .option("--non-interactive", "Skip the wizard; just create .codebuddy/config.json.")
-    .action(async (opts: { nonInteractive?: boolean }) => {
+    .option("--github-action", "Install the GitHub PR change-safety workflow.")
+    .action(async (opts: { nonInteractive?: boolean; githubAction?: boolean }) => {
       await runSafely(async () => {
         if (opts.nonInteractive || !process.stdin.isTTY) {
           const result = await initConfigFile();
           console.log(`${result.created ? "created" : "updated permissions"} ${result.path}`);
+          if (opts.githubAction) {
+            const workflow = await installGitHubWorkflow();
+            console.log(`${workflow.created ? "installed" : "already present"} ${workflow.path}`);
+          }
           return;
         }
         await runInitWizard();
+        if (opts.githubAction) {
+          const workflow = await installGitHubWorkflow();
+          console.log(`${workflow.created ? "installed" : "already present"} ${workflow.path}`);
+        }
       });
     });
 

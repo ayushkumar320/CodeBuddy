@@ -111,6 +111,13 @@ describe("CLI end-to-end", () => {
     expect(parsed.test.output).toContain("ok");
   });
 
+  it("init --non-interactive --github-action installs the workflow", async () => {
+    const root = await tempRepo();
+    const { code, stdout } = await runCli(["init", "--non-interactive", "--github-action"], root);
+    expect(code).toBe(0);
+    expect(stdout).toContain(".github/workflows/codebuddy.yml");
+  });
+
   it("rules show prints the workflow template", async () => {
     const root = await tempRepo();
     const { code, stdout } = await runCli(["rules", "show"], root);
