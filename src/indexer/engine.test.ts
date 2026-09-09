@@ -112,6 +112,19 @@ describe("indexRepository", () => {
     expect(Object.keys(manifest.entries)).toEqual(["a.ts"]);
   });
 
+  it("never indexes the Graphify output directory", async () => {
+    const root = await tempRepo();
+    await mkdir(join(root, "graphify-out", "cache"), { recursive: true });
+    await writeFile(join(root, "graphify-out", "graph.json"), '{"nodes":[],"links":[]}');
+    await writeFile(join(root, "graphify-out", "cache", "ast.json"), "{}");
+    await writeFile(join(root, "a.ts"), "export const a = 1;\n");
+
+    const result = await indexRepository({ repositoryRoot: root });
+    expect(result.totalIndexed).toBe(1);
+    const manifest = await new IndexStore(root).read();
+    expect(Object.keys(manifest.entries)).toEqual(["a.ts"]);
+  });
+
   it("respects .gitignore when the directory is a git repo", async () => {
     const root = await tempRepo();
     const git = (args: string[]) => spawnSync("git", args, { cwd: root });

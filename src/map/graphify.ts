@@ -4,6 +4,22 @@ import type { ArchitectureMap, ModuleEdge, ModuleNode } from "./types.js";
 
 type GraphifyRecord = Record<string, unknown>;
 
+/**
+ * Graphify emits containment and documentation relations alongside real
+ * dependencies. Keeping them would make a README or an MCP config look like an
+ * importer of the code it mentions, so they are dropped. Edges with no relation
+ * field (older graph.json exports) are still treated as imports.
+ */
+const NON_DEPENDENCY_RELATIONS = new Set([
+  "contains",
+  "part_of",
+  "defines",
+  "declares",
+  "references",
+  "requires_env",
+  "rationale_for",
+]);
+
 /** Import the common graph.json node/edge shape without depending on Graphify. */
 export async function loadGraphifyMap(
   graphPath: string,
@@ -11,7 +27,7 @@ export async function loadGraphifyMap(
 ): Promise<ArchitectureMap> {
   const raw = JSON.parse(await readFile(graphPath, "utf8")) as GraphifyRecord;
   const nodes = arrayRecord(raw.nodes ?? raw.entities);
-  const edges = arrayRecord(raw.edges ?? raw.relationships);
+  const edges = arrayRecord(raw.edges ?? raw.links ?? raw.relationships);
   const nodePaths = new Map<string, string>();
   const modules: ModuleNode[] = [];
 
@@ -26,18 +42,31 @@ export async function loadGraphifyMap(
   const modulePaths = new Set(modules.map((module) => module.path));
   const importedEdges: ModuleEdge[] = [];
   for (const edge of edges) {
+    const relation = stringValue(edge.relation ?? edge.type ?? edge.kind)?.toLowerCase() ?? null;
+    if (relation && NON_DEPENDENCY_RELATIONS.has(relation)) continue;
     const from = endpointPath(edge.from ?? edge.source, nodePaths, repositoryRoot);
     const to = endpointPath(edge.to ?? edge.target, nodePaths, repositoryRoot);
     if (!from || !to || !modulePaths.has(from) || !modulePaths.has(to) || from === to) continue;
-    importedEdges.push({ from, to, kind: "import" });
+    importedEdges.push({
+      from,
+      to,
+      kind: relation?.includes("dynamic") ? "dynamic_import" : "import",
+    });
   }
 
   const uniqueModules = [...new Map(modules.map((module) => [module.path, module])).values()].sort(
     (left, right) => left.path.localeCompare(right.path),
   );
-  const uniqueEdges = [
-    ...new Map(importedEdges.map((edge) => [`${edge.from}:${edge.to}`, edge])).values(),
-  ].sort((left, right) => `${left.from}:${left.to}`.localeCompare(`${right.from}:${right.to}`));
+  const byEndpoints = new Map<string, ModuleEdge>();
+  for (const edge of importedEdges) {
+    const key = `${edge.from}:${edge.to}`;
+    const existing = byEndpoints.get(key);
+    if (!existing || (existing.kind === "dynamic_import" && edge.kind === "import"))
+      byEndpoints.set(key, edge);
+  }
+  const uniqueEdges = [...byEndpoints.values()].sort((left, right) =>
+    `${left.from}:${left.to}`.localeCompare(`${right.from}:${right.to}`),
+  );
   if (uniqueModules.length === 0 || uniqueEdges.length === 0) {
     throw new Error(`Graphify graph contains no usable file relationships: ${graphPath}`);
   }

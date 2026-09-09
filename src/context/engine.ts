@@ -633,10 +633,15 @@ async function loadProjectArchitectureMap(
     config.graphify?.enabled &&
     (await graphifyGraphExists(repositoryRoot, config.graphify.graphPath))
   ) {
-    return loadGraphifyMap(
-      join(repositoryRoot, config.graphify.graphPath ?? "graphify-out/graph.json"),
-      repositoryRoot,
-    );
+    try {
+      return await loadGraphifyMap(
+        join(repositoryRoot, config.graphify.graphPath ?? "graphify-out/graph.json"),
+        repositoryRoot,
+      );
+    } catch {
+      // An unusable or malformed graph degrades to the built-in import map
+      // instead of failing the whole context request.
+    }
   }
   return (await loadArchitectureMap(repositoryRoot, manifest)).map;
 }

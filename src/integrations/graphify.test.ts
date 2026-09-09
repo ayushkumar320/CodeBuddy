@@ -77,6 +77,27 @@ describe("setupGraphify", () => {
     expect(calls[0]?.slice(0, 2)).toEqual(["extract", root]);
   });
 
+  it("self-ignores the generated graph directory without overwriting an existing .gitignore", async () => {
+    const root = await rootWithGraph();
+    const generate = () =>
+      generateGraphifyGraph({
+        repositoryRoot: root,
+        run: async (_command, args) => {
+          // Only the first call extracts into staging; the second takes the
+          // in-place `update` path and needs no staged graph.
+          if (args[0] === "extract" && args[3]) await writeGraph(args[3]);
+          return { stdout: "", stderr: "" };
+        },
+      });
+
+    await generate();
+    expect(await readFile(join(root, "graphify-out", ".gitignore"), "utf8")).toContain("*");
+
+    await writeFile(join(root, "graphify-out", ".gitignore"), "# mine\n");
+    await generate();
+    expect(await readFile(join(root, "graphify-out", ".gitignore"), "utf8")).toBe("# mine\n");
+  });
+
   it("recovers from a missing or invalid graph without leaving invalid output", async () => {
     const root = await rootWithGraph();
     await mkdir(join(root, "graphify-out"), { recursive: true });
