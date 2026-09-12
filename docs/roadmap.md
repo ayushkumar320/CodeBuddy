@@ -22,10 +22,10 @@ working offline fallback.
 | N.2 | Deterministic capture from the real edited-file set | ✅ shipped | — |
 | N.3 | Symbol-level slicing (send functions, not whole files) | ✅ shipped | — |
 | **N.4** | **Session capsule ledger (never resend a capsule)** | ✅ **shipped** | — |
-| N.5 | Relevance-ranked budget packing (embeddings → priority) | in progress: deterministic ranking shipped | medium |
+| N.5 | Relevance-ranked budget packing (embeddings → priority) | partially shipped: injectable semantic ranker + deterministic fallback | medium |
 | N.6 | Diff-aware context + prompt-cache-aware ordering | planned | medium |
-| N.7 | Real tokenizer behind `estimateTokens` | planned | low |
-| R.1 | Publish `2.0.0` to npm | pending your call | — |
+| N.7 | Real tokenizer behind `estimateTokens` | planner shipped; savings reporting pending | low |
+| R.1 | Publish the current release to npm | pending your call | — |
 | R.2 | Codex lifecycle hooks (`hooks install --client codex`) | planned | low |
 
 Dependency order: N.3 unblocks N.4 and N.5. N.6 depends on N.2 + N.4.
@@ -98,7 +98,7 @@ sites change.
 
 ## Theme B — Reach & release
 
-### R.1 — Publish 2.0.0 to npm
+### R.1 — Publish the current release to npm
 
 The package is built and `npm pack`-validated but not published. Requires your
 npm auth. See [live-test-checklist.md](live-test-checklist.md) for the pre-push

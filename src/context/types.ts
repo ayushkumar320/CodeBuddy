@@ -90,6 +90,12 @@ export type FileSymbols = {
   signatures: string[];
 };
 
+/** A bounded Git diff hunk for a file in the current change set. */
+export type DiffHunk = {
+  path: string;
+  patch: string;
+};
+
 /**
  * Token accounting surface. `returnedEstimate` is the size of this payload;
  * `savings` (Phase 04.5) measures it against the cost of reading the represented
@@ -128,6 +134,8 @@ export type BeforeEditContext = {
   neighbours: ModuleNeighbours[];
   /** Public API (signatures) of target files, so the agent needn't read them. */
   symbols: FileSymbols[];
+  /** Changed hunks with a small amount of surrounding context, when Git is available. */
+  diffs: DiffHunk[];
   tokens: TokenStats;
   explain: string[];
 };

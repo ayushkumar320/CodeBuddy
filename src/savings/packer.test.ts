@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { packByBudget } from "./packer.js";
+import { estimateTokens } from "./tokens.js";
 import type { PackCandidate } from "./types.js";
 
-const big = "x".repeat(400); // ~100 tokens
-const small = "y".repeat(40); // ~10 tokens
+const big = "x".repeat(400);
+const small = "y".repeat(40);
+const bigTokens = estimateTokens(big);
+const smallTokens = estimateTokens(small);
 
 describe("packByBudget", () => {
   it("includes everything when the budget is ample", () => {
@@ -21,7 +24,7 @@ describe("packByBudget", () => {
       { value: "low", priority: 1, text: big },
       { value: "critical", priority: 10, text: big },
     ];
-    const result = packByBudget(candidates, 100); // room for exactly one big item
+    const result = packByBudget(candidates, bigTokens); // room for exactly one big item
     const byValue = new Map(result.items.map((i) => [i.value, i.status]));
     expect(byValue.get("critical")).toBe("included");
     expect(byValue.get("low")).toBe("skipped");
@@ -32,7 +35,7 @@ describe("packByBudget", () => {
       { value: "a", priority: 5, text: big },
       { value: "b", priority: 1, text: big, compressedText: small },
     ];
-    const result = packByBudget(candidates, 110); // one big + one small fits
+    const result = packByBudget(candidates, bigTokens + smallTokens); // one big + one small fits
     const byValue = new Map(result.items.map((i) => [i.value, i.status]));
     expect(byValue.get("a")).toBe("included");
     expect(byValue.get("b")).toBe("compressed");
@@ -43,10 +46,10 @@ describe("packByBudget", () => {
       { value: "a", priority: 2, text: big },
       { value: "b", priority: 1, text: big },
     ];
-    const result = packByBudget(candidates, 100);
-    expect(result.stats.candidateTokens).toBe(200);
-    expect(result.stats.returnedTokens).toBe(100);
-    expect(result.stats.savedTokens).toBe(100);
+    const result = packByBudget(candidates, bigTokens);
+    expect(result.stats.candidateTokens).toBe(bigTokens * 2);
+    expect(result.stats.returnedTokens).toBe(bigTokens);
+    expect(result.stats.savedTokens).toBe(bigTokens);
     expect(result.stats.compressionRatio).toBeCloseTo(0.5);
   });
 

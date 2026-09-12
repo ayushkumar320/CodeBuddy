@@ -21,8 +21,8 @@ describe("SessionCapsuleLedger", () => {
     const repo = await root();
     const ledger = new SessionCapsuleLedger(repo);
     const capsules = [
-      { key: "plan", text: "plan: OAuth" },
-      { key: "policy", text: "policy: review auth" },
+      { key: "plan", text: "plan: OAuth callback implementation and rollout" },
+      { key: "policy", text: "policy: review auth changes with security checklist" },
     ];
     expect((await ledger.deliver("s1", capsules)).full).toBe(2);
     const repeated = await ledger.deliver("s1", capsules);

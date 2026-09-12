@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { MemoryFileStore } from "../core/memory-file-store.js";
 import { PlanFileStore } from "../core/plan-file-store.js";
@@ -9,6 +11,7 @@ import { indexRepository } from "../indexer/engine.js";
 import { buildBeforeEditContext, buildBootstrapContext } from "./engine.js";
 
 const roots: string[] = [];
+const execFileAsync = promisify(execFile);
 
 const POLICY_FILE = [
   "rules:",
@@ -204,6 +207,29 @@ describe("buildBeforeEditContext", () => {
     // N.3: the target file's public API is returned as signatures, not full source.
     const api = ctx.symbols.find((s) => s.path === "src/auth/oauth.ts");
     expect(api?.signatures.some((sig) => sig.includes("login"))).toBe(true);
+  });
+
+  it("includes bounded Git diff hunks for the current target", async () => {
+    const root = await seedRepo();
+    await execFileAsync("git", ["init", "-q"], { cwd: root });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    await execFileAsync("git", ["config", "user.name", "CodeBuddy Test"], { cwd: root });
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    await execFileAsync("git", ["commit", "-qm", "initial"], { cwd: root });
+    await writeFile(
+      join(root, "src", "auth", "oauth.ts"),
+      'import { verify } from "./verify";\nexport const login = () => verify();\nexport const state = "preserved";\n',
+    );
+
+    const ctx = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      paths: ["src/auth/oauth.ts"],
+    });
+
+    expect(ctx.diffs).toHaveLength(1);
+    expect(ctx.diffs[0]?.path).toBe("src/auth/oauth.ts");
+    expect(ctx.diffs[0]?.patch).toContain('+export const state = "preserved";');
   });
 
   it("resolves target files from a plan id", async () => {
