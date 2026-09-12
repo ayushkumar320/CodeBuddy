@@ -1,6 +1,6 @@
 {
   "name": "@ayushkumar320/codebuddy",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Local-first Markdown-backed MCP memory and automatic project-context engine for multi-agent coding, indexed with Postgres and pgvector.",
   "type": "module",
   "license": "MIT",

@@ -1,4 +1,4 @@
-# CodeBuddy — Live test checklist (before pushing v2.0)
+# CodeBuddy — Live test checklist (before publishing v2.1.1)
 
 A hands-on pass to confirm CodeBuddy works as a real user would experience it —
 testing the **built, packed artifact**, not the source. Work top to bottom; each
@@ -17,7 +17,7 @@ npm run lint             # ✅ no errors
 npm test                 # ✅ all pass (1 Postgres integration test may skip)
 npm run build            # ✅ builds dist/
 npm audit --omit=dev     # ✅ 0 vulnerabilities
-npm pack --dry-run       # ✅ lists dist/, migrations, README, examples; version 2.0.0
+ npm pack --dry-run       # ✅ lists dist/, migrations, README, examples; version 2.1.1
 ```
 
 ## 1. Install the real artifact
@@ -26,9 +26,9 @@ Test what npm ships, not `tsx` on source.
 
 ```bash
 npm run build
-npm pack                                        # → ayushkumar320-codebuddy-2.0.0.tgz
-npm install -g ./ayushkumar320-codebuddy-2.0.0.tgz
-codebuddy --version                             # PASS: prints 2.0.0
+npm pack                                        # → ayushkumar320-codebuddy-2.1.1.tgz
+npm install -g ./ayushkumar320-codebuddy-2.1.1.tgz
+codebuddy --version                             # PASS: prints 2.1.1
 codebuddy --help                                # PASS: lists index, context, symbols, savings, suggest, memory, rules, hooks
 ```
 Cleanup later: `npm rm -g @ayushkumar320/codebuddy`.
@@ -164,7 +164,7 @@ codebuddy use <project>                          # wires MCP + namespace + DB
 
 ```bash
 npm rm -g @ayushkumar320/codebuddy
-rm -f ayushkumar320-codebuddy-2.0.0.tgz
+rm -f ayushkumar320-codebuddy-2.1.1.tgz
 ```
 
 ---
@@ -172,7 +172,7 @@ rm -f ayushkumar320-codebuddy-2.0.0.tgz
 ## Release (only after all PASS)
 
 ```bash
-git tag v2.0.0 && git push origin v2.0.0
+git tag v2.1.1 && git push origin v2.1.1
 npm login
 npm publish --access public                     # prepublishOnly re-runs typecheck+test+build
 ```

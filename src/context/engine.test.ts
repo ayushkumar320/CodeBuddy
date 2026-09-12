@@ -232,6 +232,43 @@ describe("buildBeforeEditContext", () => {
     expect(ctx.diffs[0]?.patch).toContain('+export const state = "preserved";');
   });
 
+  it("includes untracked files and marks oversized patches as truncated", async () => {
+    const root = await seedRepo();
+    await execFileAsync("git", ["init", "-q"], { cwd: root });
+    const path = "src/auth/new-provider.ts";
+    await writeFile(join(root, path), `${"export const provider = true;\n".repeat(300)}`);
+
+    const ctx = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      paths: [path],
+    });
+
+    expect(ctx.diffs[0]?.path).toBe(path);
+    expect(ctx.diffs[0]?.truncated).toBe(true);
+    expect(ctx.diffs[0]?.patch).toContain("new file mode 100644");
+  });
+
+  it("keeps deleted and renamed files in Git diff context", async () => {
+    const root = await seedRepo();
+    await execFileAsync("git", ["init", "-q"], { cwd: root });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    await execFileAsync("git", ["config", "user.name", "CodeBuddy Test"], { cwd: root });
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    await execFileAsync("git", ["commit", "-qm", "initial"], { cwd: root });
+    await execFileAsync("git", ["mv", "src/auth/verify.ts", "src/auth/check.ts"], { cwd: root });
+    await execFileAsync("git", ["rm", "src/auth/oauth.ts"], { cwd: root });
+
+    const ctx = await buildBeforeEditContext({
+      repositoryRoot: root,
+      namespace: "proj",
+      paths: ["src/auth/check.ts", "src/auth/oauth.ts"],
+    });
+
+    expect(ctx.diffs.map((diff) => diff.path)).toContain("src/auth/check.ts");
+    expect(ctx.diffs.map((diff) => diff.path)).toContain("src/auth/oauth.ts");
+  });
+
   it("resolves target files from a plan id", async () => {
     const root = await seedRepo();
     const plan = (await new PlanFileStore(root).listPlans())[0];

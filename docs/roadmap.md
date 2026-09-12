@@ -89,10 +89,10 @@ offline path unchanged; test that a tight budget keeps the most relevant files.
 
 ### N.7 — Real tokenizer (accuracy, not savings)
 
-Swap the `~4 chars/token` estimate behind `savings/tokens.ts` for a real
-tokenizer keyed to the caller model, so budgets and reported savings match
-provider accounting exactly. The `estimateTokens` seam isolates this — no call
-sites change.
+Use a tokenizer selected for the caller model behind `savings/tokens.ts`, so
+budgets and reported savings better match provider accounting. The current
+`cl100k` implementation is deterministic and shared across planner and savings
+paths; the `estimateTokens` seam isolates future model-specific selection.
 
 ---
 

@@ -516,16 +516,42 @@ async function computeTargetSymbols(
  */
 async function readGitDiffs(repositoryRoot: string, paths: string[]): Promise<DiffHunk[]> {
   if (paths.length === 0) return [];
+  const sections: string[] = [];
   try {
     const { stdout } = await execFileAsync(
       "git",
       ["diff", "HEAD", "--no-ext-diff", "--unified=3", "--", ...paths],
       { cwd: repositoryRoot, maxBuffer: 2_000_000 },
     );
-    return parseGitDiff(stdout).slice(0, MAX_DIFF_FILES);
+    sections.push(stdout);
   } catch {
-    return [];
+    // Repositories without a first commit cannot use `git diff HEAD`. Their
+    // staged and unstaged tracked changes are still useful independently.
+    for (const args of [
+      ["diff", "--cached", "--no-ext-diff", "--unified=3", "--", ...paths],
+      ["diff", "--no-ext-diff", "--unified=3", "--", ...paths],
+    ]) {
+      try {
+        const { stdout } = await execFileAsync("git", args, {
+          cwd: repositoryRoot,
+          maxBuffer: 2_000_000,
+        });
+        sections.push(stdout);
+      } catch {
+        // Fall through to untracked-file handling.
+      }
+    }
   }
+
+  const parsed = parseGitDiff(sections.join("\n"));
+  const known = new Set(parsed.map((diff) => diff.path));
+  const untracked = await listUntrackedPaths(repositoryRoot, paths);
+  for (const path of untracked) {
+    if (known.has(path)) continue;
+    const patch = await buildUntrackedPatch(repositoryRoot, path);
+    if (patch) parsed.push(patch);
+  }
+  return parsed.slice(0, MAX_DIFF_FILES);
 }
 
 function parseGitDiff(diff: string): DiffHunk[] {
@@ -535,9 +561,59 @@ function parseGitDiff(diff: string): DiffHunk[] {
     .flatMap((section) => {
       const header = section.match(/^diff --git a\/(.+?) b\/(.+?)\n/m);
       if (!header?.[2]) return [];
-      const patch = section.slice(0, MAX_DIFF_CHARS_PER_FILE).trim();
-      return patch ? [{ path: header[2], patch }] : [];
+      const rawPatch = section.trim();
+      const patch = rawPatch.slice(0, MAX_DIFF_CHARS_PER_FILE).trim();
+      return patch
+        ? [
+            {
+              path: header[2],
+              patch,
+              ...(patch.length < rawPatch.length ? { truncated: true } : {}),
+            },
+          ]
+        : [];
     });
+}
+
+async function listUntrackedPaths(repositoryRoot: string, paths: string[]): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["ls-files", "--others", "--exclude-standard", "--", ...paths],
+      { cwd: repositoryRoot, maxBuffer: 1_000_000 },
+    );
+    return stdout
+      .split(/\r?\n/)
+      .map((path) => path.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function buildUntrackedPatch(repositoryRoot: string, path: string): Promise<DiffHunk | null> {
+  try {
+    const content = await readFile(join(repositoryRoot, path), "utf8");
+    if (content.includes("\0")) return null;
+    const lines = content.split(/\r?\n/);
+    const body = lines.map((line) => `+${line}`).join("\n");
+    const rawPatch = [
+      `diff --git a/${path} b/${path}`,
+      "new file mode 100644",
+      "--- /dev/null",
+      `+++ b/${path}`,
+      `@@ -0,0 +1,${lines.length} @@`,
+      body,
+    ].join("\n");
+    const patch = rawPatch.slice(0, MAX_DIFF_CHARS_PER_FILE).trim();
+    return {
+      path,
+      patch,
+      ...(patch.length < rawPatch.length ? { truncated: true } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function rankRelevantFacts(
