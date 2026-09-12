@@ -1,15 +1,14 @@
-/**
- * The one place token counts are estimated. A deterministic ~4-characters-per-
- * token heuristic — no tokenizer dependency, no network — so every savings
- * number in the system is reproducible and comparable. Objects are measured by
- * their JSON serialization, which matches how they travel over MCP.
- */
+import { countTokens } from "../planner/budget.js";
 
-const CHARS_PER_TOKEN = 4;
+/**
+ * The one place token counts are computed. Strings use the same deterministic
+ * cl100k tokenizer as planner budgets; objects are measured by their JSON
+ * serialization, which matches how they travel over MCP.
+ */
 
 export function estimateTokens(value: unknown): number {
   if (value === undefined || value === null) return 0;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   if (!text) return 0;
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
+  return countTokens(text);
 }
