@@ -1,10 +1,10 @@
-# CodeBuddy — Current Version (2.1.0)
+# CodeBuddy — Current Version (2.1.1)
 
 A precise, honest snapshot of what ships today: what is built, how automatic it
 really is, how context is captured and recalled, and where the current limits
 are. Companion to [roadmap.md](roadmap.md), which designs what comes next.
 
-- **Version:** 2.1.0
+- **Version:** 2.1.1
 - **Status:** Proposal 04 (Automatic Context Engine) complete. Full verification
   green (typecheck, lint, 224 tests / 1 Postgres-gated skip, build, `npm audit
   --omit=dev` clean, `npm pack` validated).
@@ -221,5 +221,5 @@ npm run lint        ✅
 npm test            ✅ 224 passed, 1 skipped (Postgres integration)
 npm run build       ✅
 npm audit --omit=dev ✅ 0 vulnerabilities
-npm pack --dry-run  ✅ codebuddy-2.1.0.tgz (bin + migrations + docs + examples)
+npm pack --dry-run  ✅ codebuddy-2.1.1.tgz (bin + migrations + docs + examples)
 ```
