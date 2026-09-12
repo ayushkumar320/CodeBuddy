@@ -9,7 +9,7 @@ It runs on your machine. Knowledge lives as readable Markdown under
 `.codebuddy/`. PostgreSQL + pgvector is only a search index, never the source of
 truth. Nothing is sent to a hosted CodeBuddy service — there isn't one.
 
-- **npm:** `@ayushkumar320/codebuddy` (v2.0.0)
+- **npm:** `@ayushkumar320/codebuddy` (v2.1.0)
 - **Surfaces:** CLI · MCP stdio server · TypeScript SDK · LangGraph helpers
 
 ---
