@@ -186,6 +186,13 @@ function printBeforeEdit(ctx: BeforeEditContext): void {
       console.log(`  ${file.path} ${pc.dim(`${file.signatures.length} symbol(s)`)}`);
     }
   }
+  if (ctx.diffs.length > 0) {
+    console.log(pc.bold("changed hunks:"));
+    for (const diff of ctx.diffs) {
+      console.log(`  ${diff.path}${diff.truncated ? pc.dim(" (truncated)") : ""}`);
+      for (const line of diff.patch.split("\n").slice(-8)) console.log(pc.dim(`    ${line}`));
+    }
+  }
   printTokens(ctx);
 }
 

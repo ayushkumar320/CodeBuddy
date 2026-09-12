@@ -94,6 +94,7 @@ export type FileSymbols = {
 export type DiffHunk = {
   path: string;
   patch: string;
+  truncated?: boolean;
 };
 
 /**
