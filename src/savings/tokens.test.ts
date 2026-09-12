@@ -8,7 +8,7 @@ describe("estimateTokens", () => {
     expect(estimateTokens("")).toBe(0);
   });
 
-  it("uses a ~4-chars-per-token ceiling for strings", () => {
+  it("uses the shared cl100k tokenizer for strings", () => {
     expect(estimateTokens("abcd")).toBeGreaterThan(0);
     expect(estimateTokens("abcde")).toBeGreaterThanOrEqual(estimateTokens("abcd"));
     expect(estimateTokens("a".repeat(40))).toBeGreaterThan(0);
