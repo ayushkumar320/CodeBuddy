@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { loadPlanPolicy, readConfigFile } from "../core/config-file.js";
 import {
   type FactFile,
@@ -25,6 +27,7 @@ import type {
   ArchitectureSummary,
   BeforeEditContext,
   BootstrapContext,
+  DiffHunk,
   IncidentSummary,
   ModuleNeighbours,
   PathSource,
@@ -53,6 +56,9 @@ const LIMITS = {
 } as const;
 
 const DEFAULT_TOKEN_BUDGET = 4_000;
+const MAX_DIFF_FILES = 8;
+const MAX_DIFF_CHARS_PER_FILE = 2_400;
+const execFileAsync = promisify(execFile);
 
 export type BootstrapInput = {
   repositoryRoot?: string;
@@ -172,7 +178,7 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
   const manifestPromise = new IndexStore(repositoryRoot).read();
   const mapPromise = loadProjectArchitectureMap(repositoryRoot, manifestPromise);
 
-  const [referencedPlan, policy, policyFile, incidents, facts, risks, manifest, map] =
+  const [referencedPlan, policy, policyFile, incidents, facts, risks, manifest, map, diffs] =
     await Promise.all([
       resolveRelevantPlan(planStore, namespace, input.planId),
       loadPlanPolicy(repositoryRoot),
@@ -196,6 +202,9 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
       }),
       manifestPromise,
       mapPromise,
+      input.useGit === false
+        ? Promise.resolve([] as DiffHunk[])
+        : readGitDiffs(repositoryRoot, targetPaths),
     ]);
 
   const explain: string[] = [];
@@ -250,6 +259,7 @@ export async function buildBeforeEditContext(input: BeforeEditInput): Promise<Be
     risks,
     neighbours,
     symbols,
+    diffs,
     explain,
   };
   const partial = enforceBeforeEditBudget(assembled, input.tokenBudget ?? DEFAULT_TOKEN_BUDGET);
@@ -321,6 +331,9 @@ function enforceBeforeEditBudget<T extends Omit<BeforeEditContext, "tokens">>(
     action();
     omitted.push(name);
   };
+  drop("diff hunks", () => {
+    output.diffs = [];
+  });
   drop("import neighbours", () => {
     output.neighbours = [];
   });
@@ -495,6 +508,36 @@ async function computeTargetSymbols(
     }
   }
   return result;
+}
+
+/**
+ * Read the current staged and unstaged hunks for target paths. The result is
+ * bounded per file so a large change cannot crowd out plan and risk context.
+ */
+async function readGitDiffs(repositoryRoot: string, paths: string[]): Promise<DiffHunk[]> {
+  if (paths.length === 0) return [];
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["diff", "HEAD", "--no-ext-diff", "--unified=3", "--", ...paths],
+      { cwd: repositoryRoot, maxBuffer: 2_000_000 },
+    );
+    return parseGitDiff(stdout).slice(0, MAX_DIFF_FILES);
+  } catch {
+    return [];
+  }
+}
+
+function parseGitDiff(diff: string): DiffHunk[] {
+  return diff
+    .split(/(?=^diff --git )/m)
+    .filter((section) => section.startsWith("diff --git "))
+    .flatMap((section) => {
+      const header = section.match(/^diff --git a\/(.+?) b\/(.+?)\n/m);
+      if (!header?.[2]) return [];
+      const patch = section.slice(0, MAX_DIFF_CHARS_PER_FILE).trim();
+      return patch ? [{ path: header[2], patch }] : [];
+    });
 }
 
 async function rankRelevantFacts(
