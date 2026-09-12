@@ -41,7 +41,8 @@ from the roadmap, not this folder:
   twice in a session; collapse an already-sent capsule to a ~1-token reference
   until its content hash changes. See [../roadmap.md](../roadmap.md).
 - then N.5 (relevance-ranked packing) → N.6 (diff-aware + cache-aware ordering)
-  → N.7 (real tokenizer). Release items: R.1 (publish 2.0.0), R.2 (Codex hooks).
+  → N.7 (model-aware tokenizer). Release items: R.1 (publish the current
+  release), R.2 (Codex hooks).
 
 If a future roadmap item needs a scoped brief, add a new `NN-*.md` execution
 packet here and point `current-phase.md` at it.

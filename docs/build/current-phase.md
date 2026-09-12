@@ -15,7 +15,8 @@ this whenever a phase starts or lands.
   keyed by capsule content-hash; an already-sent capsule collapses to a
   ~1-token reference (`capsule:ab12cd34`) until its hash changes. Deterministic,
   with a measured multi-turn savings test.
-- After N.4: N.5 → N.6 → N.7; release items R.1 (publish 2.0.0) / R.2 (Codex hooks).
+- After N.4: N.5 → N.6 → N.7; release items R.1 (publish the current release) /
+  R.2 (Codex hooks).
 
 ## Last completed
 
