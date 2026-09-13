@@ -6,6 +6,7 @@ import { mergeGlobalConfig, readGlobalConfig } from "../../core/global-config.js
 import { bootstrapDatabase } from "../../db/bootstrap.js";
 import { createDatabaseClient, pingDatabase } from "../../db/client.js";
 import { runMigrations } from "../../db/migrator.js";
+import { indexRepository } from "../../indexer/engine.js";
 import { setupGraphify } from "../../integrations/graphify.js";
 import { writeProjectMcpConfig } from "../../integrations/project-mcp.js";
 import { installWorkflowRules } from "../../templates/install.js";
@@ -200,6 +201,14 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
     });
 
     const existingConfig = await readConfigFile();
+    const indexSpinner = spinner();
+    indexSpinner.start("Indexing the existing repository");
+    try {
+      const result = await indexRepository({ repositoryRoot: process.cwd() });
+      indexSpinner.stop(`Repository indexed (${result.totalIndexed} files).`);
+    } catch (error) {
+      indexSpinner.stop(`Repository indexing skipped: ${(error as Error).message}`);
+    }
     const graphifySetup = graphifyEnabled
       ? await setupGraphify({ repositoryRoot: process.cwd() })
       : null;
@@ -268,7 +277,7 @@ export async function runUseCommand(options: UseCommandOptions = {}): Promise<vo
         `Next:`,
         `  1. Restart Claude Desktop and Codex.`,
         `  2. Ask Claude or Codex to use the ${pc.cyan("context_pack")} tool for each coding task.`,
-        `  3. If Graphify is enabled, refresh it with ${pc.cyan("codebuddy graphify index")} after code changes.`,
+        `  3. Indexing, Graphify, Markdown memory import, and embeddings now update automatically while the MCP server is running.`,
         `  4. Run ${pc.cyan("codebuddy doctor")} or ${pc.cyan("codebuddy db doctor")} if you want a full health check.`,
         ``,
         `Manage:`,

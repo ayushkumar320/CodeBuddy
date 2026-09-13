@@ -534,6 +534,10 @@ export function registerCodeBuddyTools(server: McpServer, options: RegisterCodeB
         ...(input.taskType !== undefined ? { taskType: input.taskType } : {}),
         ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
       });
+      // Capture writes reviewable Markdown first. Import it immediately so
+      // database recall and the embedding worker see the same memory without
+      // requiring a restart or a manual `codebuddy reindex`.
+      await options.memory.reindexMemory();
       return json({
         saved: result.saved.map((d) => ({
           id: d.ref,
