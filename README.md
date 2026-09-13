@@ -117,7 +117,6 @@ npm install -g @ayushkumar320/codebuddy
 cd ~/Projects/your-project
 codebuddy                         # first-run setup; offers to start Docker when needed
 codebuddy use your-project        # repeat setup for a named namespace
-codebuddy index                   # build the background index
 codebuddy rules install --client claude   # teach the agent when to call the tools
 ```
 
@@ -146,8 +145,11 @@ added only when Graphify is enabled.
 
 Graphify runs locally. Its current installer is `uv tool install graphifyy`
 (with pipx/pip alternatives). Setup generates `graphify-out/graph.json` using
-Graphify's code-only extractor before registering the MCP server. Regenerate it
-after repository changes with:
+Graphify's code-only extractor before registering the MCP server. Once the MCP
+server starts, CodeBuddy automatically indexes the existing repository, imports
+`.codebuddy/memory/` into the database, refreshes Graphify after code changes,
+and queues embeddings in the background. No manual refresh command is needed.
+The explicit command remains available for diagnostics:
 
 ```bash
 codebuddy graphify index
@@ -286,7 +288,7 @@ files are skipped. Respects `.gitignore`.
 ```bash
 codebuddy index          # e.g. "128 indexed (+128 ~0 =0 -0) in 40ms"
 codebuddy index          # again → "=128" (all unchanged)
-codebuddy watch          # re-index on save; coalesces bursts; Ctrl+C to stop
+codebuddy watch          # optional foreground watcher; MCP serve watches automatically
 ```
 
 The index also records a per-file **symbol table** (functions, classes, types),
@@ -688,7 +690,8 @@ npm run build         # tsup → dist/
 | `password authentication failed` | `DATABASE_URL` needs `user:password`; use the bundled DB URL or `codebuddy use`. File tools are unaffected. |
 | `namespace ... differs from folder default` | Run `codebuddy use <name>` or set `CODEBUDDY_NAMESPACE`. |
 | `model ... unknown` in doctor | No HF token / model check skipped — informational, not a failure. |
-| `codebuddy savings` says "No index found" | Run `codebuddy index` first (or it falls back to reading files). |
+| `codebuddy savings` says "No index found" | Start the MCP server or run `codebuddy index` once (it also falls back to reading files). |
+| Facts/vectors are empty after setup | Restart the MCP server once; startup imports existing Markdown memory and the embedding worker then processes pending vectors. Check `codebuddy doctor` for provider/database errors. |
 | Client doesn't show CodeBuddy tools | Confirm MCP registration (`codebuddy claude list` / `codebuddy codex list`) and restart the client. |
 | `plan list` errors on this repo | Its `.codebuddy/plans/` holds hand-written docs, not generated plans — test plan/context features in a clean scaffold. |
 
